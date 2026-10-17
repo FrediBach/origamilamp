@@ -10,12 +10,15 @@ import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
 import { applyShadeTransmission } from '@/lib/shade-material'
 import { LampMounting } from '@/components/lamp-mounting'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
+import { BrutalistRoom } from '@/components/brutalist-room'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
+export type RoomStyle = 'tatami' | 'brutalist'
 
 interface LampViewerProps {
   parameters: LampParameters
   mode: PreviewMode
+  roomStyle?: RoomStyle
   lightOn: boolean
   resetKey: number
   onReady?: () => void
@@ -328,11 +331,12 @@ function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; 
   </>
 }
 
-function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampViewerProps & { keyboard: KeyboardCommand }) {
+function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyboard, onReady }: LampViewerProps & { keyboard: KeyboardCommand }) {
   const { camera, invalidate } = useThree()
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
   const { displayHeight, compressedHeight } = deriveLamp(parameters)
   const manufacturing = mode === 'print' || mode === 'materials' || mode === 'section'
+  const brutalist = roomStyle === 'brutalist'
   const floorY = mode === 'room' ? ROOM_FLOOR_Y : STUDIO_FLOOR_Y
   const height = manufacturing ? compressedHeight / 1000 : displayHeight / 1000 + 0.1
   const footprint = Math.max(parameters.width, parameters.depth) / 1000
@@ -370,16 +374,19 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
   useEffect(() => { onReady?.() }, [onReady])
 
   return <>
-    <color attach="background" args={[mode === 'room' ? '#dfded2' : '#ebeae4']} />
+    <color attach="background" args={[mode === 'room' ? brutalist ? '#d7e0e1' : '#dfded2' : '#ebeae4']} />
     {mode === 'room' ? <>
-      <ambientLight intensity={0.15} color="#fffaee" />
-      <hemisphereLight args={['#f7f5ed', '#a09b88', 0.45]} />
-      {/* A broad ceiling fixture gives furniture compact, downward shadows.
-          Soft daylight from the garden fills the room without a second key. */}
+      <ambientLight intensity={0.15} color={brutalist ? '#f0f5fa' : '#fffaee'} />
+      <hemisphereLight args={brutalist ? ['#e9f1fa', '#858e89', 0.55] : ['#f7f5ed', '#a09b88', 0.45]} />
+      {/* Both rooms share the ceiling fixture. The brutalist glazing adds
+          crisper daylight shadows from its steel mullions. */}
       <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={6.5 * parameters.ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
         castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
         shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
-      <directionalLight position={[-1.5, 2, -2.2]} intensity={0.4} color="#e9f0ff" />
+      <directionalLight position={[-1.5, 2, -2.2]} intensity={brutalist ? 0.7 : 0.4} color="#e9f0ff"
+        castShadow={brutalist} shadow-mapSize={[1024, 1024]} shadow-camera-left={-3} shadow-camera-right={3}
+        shadow-camera-top={3} shadow-camera-bottom={-2} shadow-camera-near={0.1} shadow-camera-far={8}
+        shadow-normalBias={0.002} shadow-bias={-0.0001} shadow-radius={3} />
     </> : <>
       <ambientLight intensity={0.3} color="#fffaee" />
       <hemisphereLight args={['#f7f5ed', '#a09b88', 0.95]} />
@@ -387,7 +394,7 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
       <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
       <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
     </>}
-    {mode === 'room' ? <JapaneseRoom /> : <>
+    {mode === 'room' ? brutalist ? <BrutalistRoom floorY={floorY} /> : <JapaneseRoom /> : <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[20, 20]} />
         <meshStandardMaterial color="#e6e4dc" roughness={1} />

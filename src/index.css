@@ -208,13 +208,15 @@ button svg { pointer-events: none; }
 .mounting-dimensions dd { font-family: var(--mono); margin: 0; text-align: right; }
 
 .preview-panel { position: relative; height: var(--workspace-height); min-height: 0; overflow: hidden; background: #e2dbc9; }
-.preview-toolbar { position: absolute; top: 18px; left: 20px; right: 17px; z-index: 2; display: flex; align-items: center; gap: 13px; }
-.view-toggle { display: inline-flex; padding: 4px; gap: 2px; background: #f6f3e9e8; border: 1px solid #dcd8c7a8; border-radius: 6px; backdrop-filter: blur(12px); }
-.view-toggle button { display: flex; align-items: center; gap: 7px; font-size: 11px; padding: 8px 12px; border: 0; border-radius: 3px; background: transparent; color: #636955; }
+.preview-toolbar { position: absolute; top: 18px; left: 20px; right: 17px; z-index: 2; display: flex; align-items: flex-start; gap: 13px; }
+.preview-environments { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.view-toggle { display: inline-flex; flex-shrink: 0; padding: 4px; gap: 2px; background: #f6f3e9e8; border: 1px solid #dcd8c7a8; border-radius: 6px; backdrop-filter: blur(12px); }
+.view-toggle button { display: flex; align-items: center; gap: 7px; min-height: 30px; font-size: 11px; padding: 8px 12px; border: 0; border-radius: 3px; background: transparent; color: #636955; white-space: nowrap; }
+.room-style-toggle button { padding-inline: 10px; }
 .view-toggle button.active { background: #fffdf5; color: #363e2e; box-shadow: 0 1px 4px #2a321610; }
 .view-toggle button:hover { background: #fffdf5b0; }
-.preview-caption { display: flex; align-items: center; gap: 6px; margin-left: auto; font-family: var(--mono); color: #59634b; font-size: 10px; letter-spacing: 1.1px; padding: 7px 0; text-shadow: 0 1px 8px #fffc; }
-.preview-toolbar > .button { color: #555f47; background: #f8f5ead9; border: 1px solid #dcd8c780; }
+.preview-caption { display: flex; flex-shrink: 0; align-items: center; gap: 6px; margin: 4px 0 0 auto; font-family: var(--mono); color: #59634b; font-size: 10px; letter-spacing: 1.1px; padding: 7px 0; text-shadow: 0 1px 8px #fffc; white-space: nowrap; }
+.preview-toolbar > .button { flex-shrink: 0; margin-top: 1px; color: #555f47; background: #f8f5ead9; border: 1px solid #dcd8c780; }
 .preview-caption { padding: 8px; border-radius: 4px; background: #f8f5eaeb; }
 .canvas-container { position: absolute; inset: 0; }
 .canvas-container > div { width: 100%; height: 100%; }
