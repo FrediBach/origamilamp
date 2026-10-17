@@ -7,6 +7,7 @@ import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { buildExpandedGeometry } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
+import { applyShadeTransmission } from '@/lib/shade-material'
 import { LampMounting } from '@/components/lamp-mounting'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 
@@ -113,13 +114,15 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           silhouette in the ceiling spotlight's ordinary depth shadow map. */}
       <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
       <meshStandardMaterial
+        onBeforeCompile={applyShadeTransmission}
+        customProgramCacheKey={() => 'shade-transmission-v1'}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}
         side={THREE.DoubleSide}
         emissive={lighting.color}
         emissiveMap={shadeGlow}
-        emissiveIntensity={lightOn ? 0.6 : 0}
+        emissiveIntensity={lightOn ? 1.2 : 0}
       />
     </mesh>
     {/* Separate hardware captures both terminal sheets and carries their pull. */}
