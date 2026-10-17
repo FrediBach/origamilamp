@@ -381,8 +381,12 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
   return <>
     <color attach="background" args={[mode === 'room' ? brutalist ? '#d7e0e1' : '#dfded2' : '#ebeae4']} />
     {mode === 'room' ? <>
-      <ambientLight intensity={0.15} color={brutalist ? '#f0f5fa' : '#fffaee'} />
-      <hemisphereLight args={brutalist ? ['#e9f1fa', '#858e89', 0.55] : ['#f7f5ed', '#a09b88', 0.45]} />
+      {/* Approximate diffuse room bounce: broad sky/floor fill keeps the oak's
+          outward faces readable, while the ceiling contributes reflected light
+          with its own warmth and intensity. The direct lights retain shadows. */}
+      <ambientLight intensity={0.22} color={brutalist ? '#f0f5fa' : '#fffaee'} />
+      <hemisphereLight args={brutalist ? ['#e9f1fa', '#b0b5b1', 1.15] : ['#f7f5ed', '#c3b49a', 1.05]} />
+      <ambientLight color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={0.3 * parameters.ceilingLightIntensity / 100} />
       {/* Both rooms share the ceiling fixture. The brutalist glazing adds
           crisper daylight shadows from its steel mullions. */}
       <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={6.5 * parameters.ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
