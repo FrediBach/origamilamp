@@ -56,7 +56,7 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 ## Design and make
 
 1. Choose a circle or soft square/rectangle. Change dimensions, full pleat count, membrane width, appearance, and preview expansion in real time. Open the help icon in the top bar for a guide to the process.
-2. Review the live diagnostics after each change. Inspect the compressed TPU body, material assembly, vertical section, and individual print layers. Numeric inputs and keyboard-operable sliders provide equivalent ways to set dimensions.
+2. Review the live diagnostics after each change. **View checks** offers a correction button when a reliable parameter adjustment is available, with the proposed changes shown before applying and **Undo correction** for the most recent adjustment. Corrections preserve printer dimensions, LED requirements, and measured calibration; physical testing reminders remain manual. Inspect the compressed TPU body, material assembly, vertical section, and individual print layers. Numeric inputs and keyboard-operable sliders provide equivalent ways to set dimensions.
 3. Set the intended printer’s **usable** build envelope, extrusion width, constant layer height, and integer TPU/PLA layer counts. Reserve space for margins and any prime tower in the usable dimensions you enter.
 4. Export a short calibration specimen. The specimen preserves the selected cross section and process settings, with up to four full pleats.
 5. Import both STLs together as parts of **one assembly**, retain their shared origin and relative placement, and interpret the coordinates as millimetres. Assign the shade to TPU and separators to PLA. Do not independently drop each STL to the bed.
@@ -87,6 +87,8 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | --- | --- |
 | `src/App.tsx` | Canonical UI state, live diagnostics, process help, persistence, imports, and export actions. |
 | `src/lib/lamp.ts` | Parameter types/defaults, exact print arithmetic, calibration parameters, and manufacturing gates. |
+| `src/lib/printability-fixes.ts` | Per-check correction candidates, revalidated against the other geometry constraints. |
+| `src/components/printability-checks.tsx` | Diagnostic rows, proposed adjustments, correction feedback, and undo. |
 | `src/lib/manufacturing.ts` | Deterministic compressed TPU/PLA boundary meshes and normal-offset contours. |
 | `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
 | `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |

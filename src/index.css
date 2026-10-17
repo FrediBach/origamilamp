@@ -255,8 +255,17 @@ button svg { pointer-events: none; }
 .dialog-content > p:not(.eyebrow):not(.dialog-note) { font-size: 13px; line-height: 1.8; color: #606a4f; margin: 0 0 24px; }
 .checks-list { margin: 24px 0; }
 .check-row { display: flex; gap: 13px; padding: 15px 0; border-bottom: 1px solid #e4e6d9; color: #596d40; }
+.check-row > svg { flex-shrink: 0; margin-top: 2px; }
+.check-content { min-width: 0; }
 .check-row h3 { font-size: 13px; font-weight: 500; color: #4f5c40; margin: 0 0 5px; }
 .check-row p { font-size: 12px; line-height: 1.7; color: #606a51; margin: 0; }
+.check-correction { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; margin-top: 12px; }
+.check-correction p { font-size: 11px; }
+.check-correction .button { min-height: 36px; white-space: normal; text-align: left; }
+.check-correction .button svg { flex-shrink: 0; }
+.check-feedback:not(:empty) { border: 1px solid #d9decd; border-radius: 5px; padding: 12px 14px; background: #f0f2e7; color: #4f5c40; }
+.check-feedback p { margin: 0; font-size: 12px; line-height: 1.7; }
+.check-feedback .button { margin: 7px 0 0 -7px; padding-inline: 7px; }
 .check-warning { color: #895e1d; }
 .check-error { color: #ac462e; }
 .check-error h3 { color: #a44430; }
