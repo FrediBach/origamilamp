@@ -13,6 +13,7 @@ import { LampMounting } from '@/components/lamp-mounting'
 import { LampBase } from '@/components/lamp-base'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 import { BrutalistRoom } from '@/components/brutalist-room'
+import { WoodBox, useWoodMaterials } from '@/components/wood-box'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
 export type RoomStyle = 'tatami' | 'brutalist'
@@ -93,7 +94,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const geometry = useMemo(() => buildExpandedGeometry(parameters), [parameters])
   const { width: w, depth: d } = useMemo(() => previewFrameDimensions(geometry), [geometry])
   useEffect(() => () => geometry.dispose(), [geometry])
-  const wood = useSurfaceTexture('wood')
+  const wood = useWoodMaterials(parameters.frameWood)
   const paper = useSurfaceTexture('paper')
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
@@ -124,14 +125,14 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
     </mesh>
     {/* Separate hardware captures both terminal sheets and carries their pull. */}
     <LampMounting parameters={parameters} frameWidth={w} frameDepth={d} />
-    {[-1, 1].flatMap(x => [-1, 1].map(z => <Box key={`${x}-${z}`} position={[x * w / 2, (postTop + postBottom) / 2, z * d / 2]} size={[0.012, postTop - postBottom, 0.012]} color="#ae8051" map={wood} />))}
+    {[-1, 1].flatMap(x => [-1, 1].map(z => <WoodBox key={`${x}-${z}`} position={[x * w / 2, (postTop + postBottom) / 2, z * d / 2]} size={[0.012, postTop - postBottom, 0.012]} grain="y" materials={wood} offset={x * 0.27 + z * 0.43} />))}
     {[lowerRailY, upperRailY].flatMap(y => [
-      <Box key={`front-${y}`} position={[0, y, d / 2]} size={[w + 0.012, railHeight, 0.012]} color="#b68a58" map={wood} />,
-      <Box key={`back-${y}`} position={[0, y, -d / 2]} size={[w + 0.012, railHeight, 0.012]} color="#b68a58" map={wood} />,
-      <Box key={`left-${y}`} position={[-w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
-      <Box key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
+      <WoodBox key={`front-${y}`} position={[0, y, d / 2]} size={[w + 0.012, railHeight, 0.012]} grain="x" materials={wood} offset={0.18 + y} />,
+      <WoodBox key={`back-${y}`} position={[0, y, -d / 2]} size={[w + 0.012, railHeight, 0.012]} grain="x" materials={wood} offset={0.59 + y} />,
+      <WoodBox key={`left-${y}`} position={[-w / 2, y, 0]} size={[0.012, railHeight, d]} grain="z" materials={wood} offset={0.32 + y} />,
+      <WoodBox key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} grain="z" materials={wood} offset={0.73 + y} />,
     ])}
-    <LampBase parameters={parameters} frameWidth={w} frameDepth={d} wood={wood} />
+    <LampBase parameters={parameters} frameWidth={w} frameDepth={d} frameMaterials={wood} />
     <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} />
   </group>
 }
@@ -381,7 +382,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
   return <>
     <color attach="background" args={[mode === 'room' ? brutalist ? '#d7e0e1' : '#dfded2' : '#ebeae4']} />
     {mode === 'room' ? <>
-      {/* Approximate diffuse room bounce: broad sky/floor fill keeps the oak's
+      {/* Approximate diffuse room bounce: broad sky/floor fill keeps the wood's
           outward faces readable, while the ceiling contributes reflected light
           with its own warmth and intensity. The direct lights retain shadows. */}
       <ambientLight intensity={0.22} color={brutalist ? '#f0f5fa' : '#fffaee'} />

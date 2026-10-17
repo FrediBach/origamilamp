@@ -4,6 +4,7 @@ import { strFromU8, unzipSync } from 'fflate'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, manufacturingErrors, validateLamp, type LampParameters } from './lamp'
 import { buildManufacturingGeometry, offsetContour } from './manufacturing'
 import { createManufacturingArchive, geometryToSTL, parseDesign, serializeDesign } from './export'
+import { WOOD_FINISHES, WOOD_SPECIES } from './wood'
 
 /** Independent mesh audit: geometric degeneracy, duplicate faces, every edge's
  * two opposite incidences, connected surface count, Euler characteristic and
@@ -175,7 +176,7 @@ describe('manufacturing boundary solids', () => {
 
   it('leaves print vertices unchanged when appearance settings change', () => {
     const a = buildManufacturingGeometry(DEFAULT_PARAMETERS)
-    const b = buildManufacturingGeometry({ ...DEFAULT_PARAMETERS, height: 550, expansion: 20, rotation: 90, material: 'white' })
+    const b = buildManufacturingGeometry({ ...DEFAULT_PARAMETERS, height: 550, expansion: 20, rotation: 90, material: 'white', frameWood: 'walnut', boxWood: 'ash' })
     expect(b.tpu.getAttribute('position').array).toEqual(a.tpu.getAttribute('position').array)
     expect(b.pla.getAttribute('position').array).toEqual(a.pla.getAttribute('position').array)
     Object.values(a).forEach(mesh => mesh.dispose()); Object.values(b).forEach(mesh => mesh.dispose())
@@ -199,6 +200,57 @@ describe('registered exports and design files', () => {
     expect(() => parseDesign('{')).toThrow(/JSON/)
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, width: '180' } }))).toThrow(/width/)
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, expansion: 200 } }))).toThrow(/range/)
+  })
+  it.each(WOOD_SPECIES)('round trips the %s wood on the support frame and box', species => {
+    const p = { ...DEFAULT_PARAMETERS, frameWood: species, boxWood: species }
+    const serialized = serializeDesign(p)
+    expect(parseDesign(serialized)).toEqual(p)
+    const { mounting, electronicsBox } = JSON.parse(serialized).recipe
+    expect(mounting.frameWood).toEqual({ species, name: WOOD_FINISHES[species].name })
+    expect(electronicsBox.wood).toEqual({ selection: species, species, name: WOOD_FINISHES[species].name })
+  })
+  it('keeps the match-frame selection while resolving the current frame finish in the recipe', () => {
+    const p = { ...DEFAULT_PARAMETERS, frameWood: 'cherry' as const }
+    const serialized = serializeDesign(p)
+    expect(parseDesign(serialized).boxWood).toBe('match-frame')
+    expect(JSON.parse(serialized).recipe.electronicsBox.wood).toEqual({
+      selection: 'match-frame', species: 'cherry', name: WOOD_FINISHES.cherry.name,
+    })
+  })
+  it.each([false, true])('records the actual base-board wood when the box is enabled: %s', electronicsBox => {
+    const p = { ...DEFAULT_PARAMETERS, frameWood: 'walnut' as const, boxWood: 'ash' as const, electronicsBox }
+    const recipe = JSON.parse(serializeDesign(p)).recipe
+    expect(recipe.mounting.baseWood.species).toBe(electronicsBox ? 'ash' : 'walnut')
+    expect(recipe.electronicsBox.wood.species).toBe('ash')
+  })
+  it.each([['frameWood'], ['boxWood'], ['frameWood', 'boxWood']])('migrates only absent version 1 wood fields: %j', (...missingFields) => {
+    const document = JSON.parse(serializeDesign(DEFAULT_PARAMETERS))
+    missingFields.forEach(key => { delete document.parameters[key] })
+    expect(parseDesign(JSON.stringify(document))).toEqual(DEFAULT_PARAMETERS)
+  })
+  it.each(['frameWood', 'boxWood'])('rejects explicit invalid %s even when the box is disabled', field => {
+    for (const value of [null, 1, true, '', 'mahogany', 'OAK', {}, []]) {
+      const parameters = { ...DEFAULT_PARAMETERS, electronicsBox: false, [field]: value }
+      expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters }))).toThrow(/frameWood|boxWood|Unsupported design value/)
+      expect(validateLamp(parameters as LampParameters)).toContainEqual(expect.objectContaining({ id: 'values', status: 'error' }))
+    }
+    if (field === 'frameWood') {
+      expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, frameWood: 'match-frame' } }))).toThrow(/Unsupported design value/)
+    }
+  })
+  it.each([false, true])('exports selected wood instructions without changing STL geometry (calibration: %s)', calibration => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, electronicsBox: true }
+    const original = unzipSync(createManufacturingArchive(p, { calibration }))
+    const changed = unzipSync(createManufacturingArchive({ ...p, frameWood: 'walnut', boxWood: 'maple' }, { calibration }))
+    expect(changed['shade-tpu.stl']).toEqual(original['shade-tpu.stl'])
+    expect(changed['separators-pla.stl']).toEqual(original['separators-pla.stl'])
+    expect(parseDesign(strFromU8(changed['design.json']))).toEqual(expect.objectContaining({ frameWood: 'walnut', boxWood: 'maple' }))
+    const instructions = strFromU8(changed['READ-ME.txt'])
+    expect(instructions).toContain(`Support frame wood: ${WOOD_FINISHES.walnut.name}. Base board wood: ${WOOD_FINISHES.maple.name}.`)
+    expect(instructions).toContain(`Configured optional box wood: ${WOOD_FINISHES.maple.name}.`)
+    expect(instructions).toContain(`Wood finish: ${WOOD_FINISHES.maple.name}.`)
+    expect(instructions).not.toContain('oak frame')
+    expect(strFromU8(original['READ-ME.txt'])).toContain('(matches the support frame)')
   })
   it.each(['bolted', 'springs'] as const)('round trips the %s attachment and hardware recipe', attachment => {
     const p = { ...DEFAULT_PARAMETERS, attachment }

@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react'
 import { ParameterControl } from '@/components/parameter-control'
 import { Switch } from '@/components/ui/switch'
+import { WoodPicker } from '@/components/wood-controls'
 import type { LampParameters } from '@/lib/lamp'
 import { BASE, baseFootprint } from '@/lib/base'
 import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
@@ -27,6 +28,7 @@ export function BaseControls({ parameters, onUpdate }: {
       <Switch id={id} checked={parameters.electronicsBox} onCheckedChange={enabled => onUpdate('electronicsBox', enabled)} aria-describedby={`${id}-description`} />
     </div>
     {footprint && <div className="base-settings">
+      <WoodPicker label="Box wood" value={parameters.boxWood} matchFrame={parameters.frameWood} onChange={wood => onUpdate('boxWood', wood)} />
       <ParameterControl label="Internal box height" value={parameters.electronicsBoxHeight} min={20} max={120} step={5} unit="mm" onChange={height => onUpdate('electronicsBoxHeight', height)} hint="Clear space below the lid. The shade and supports rise with the box." />
       <dl className="mounting-dimensions base-dimensions">
         <div><dt>Internal space</dt><dd>{Math.floor(footprint.internalWidth + 1e-4)} × {Math.floor(footprint.internalDepth + 1e-4)} × {parameters.electronicsBoxHeight} mm</dd></div>

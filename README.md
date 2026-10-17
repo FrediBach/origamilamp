@@ -65,7 +65,9 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 
 In **Finish → Wooden electronics box**, optionally add a wooden compartment beneath the lamp for electronics and wiring. Set its usable internal height from **20–120 mm** (default 40 mm); the preview raises the lamp above the compartment. The compartment uses 6 mm walls and a 6 mm lid above the existing wooden base. It is a space reservation: component fit, cable routing, ventilation and electrical design require separate verification. The wooden box is separate hardware and is excluded from the shade STLs.
 
-Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. Older version 1 designs receive the original LED source, default warmth, bolted attachment and disabled electronics box with a 40 mm internal height when those newer fields are absent. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. The selected attachment, electronics box settings and matching setup instructions are included in the manufacturing ZIP. Local storage is a convenience, not a substitute for exporting a recipe.
+In **Finish**, choose the support frame's wood from **oak, ash, maple, cherry, walnut, or smoked oak**. Each finish has its own grain character, colour and brightness under the scene's lighting. The base board follows the frame when the electronics box is disabled. Enable the box to choose its wood independently, or keep **Match frame** to follow later frame changes; the selected box finish covers its base board, walls and lid. Wood choices affect the appearance preview and hardware recipe only.
+
+Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. Older version 1 designs receive the original LED source, default warmth, bolted attachment, disabled electronics box with a 40 mm internal height, oak frame and matching box wood when those newer fields are absent. Explicit invalid values are rejected instead of being silently replaced. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. The selected attachment, electronics box settings, frame and box woods, and matching setup instructions are included in the manufacturing ZIP. Local storage is a convenience, not a substitute for exporting a recipe.
 
 LED and bulb diameters are remembered separately and the selected diameter is used by the light and mounting clearance checks. Bulb placement and warmth affect the appearance preview only. The bulbs, sockets, stems, and hanging support are approximate hardware concepts, excluded from the shade STL files. The preview reports overlapping bulbs or insufficient vertical room without shrinking their selected diameter.
 
@@ -83,7 +85,7 @@ compressed body height = N × t + (N − 1) × s
 
 The default 24 full pleats give 48 membranes, 47 separators, and a **38.0 mm** compressed body at 0.2 mm layers with two layers of each material. The first layer must use the same height; variable layer heights are unsupported.
 
-Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and begins at Z = 0. The appearance scene uses metres and Y-up, with an explicit transform for the manufacturing view. Display height, preview expansion, object rotation, attachment choice, electronics box settings, and visual material tone do not change the exported manufacturing geometry.
+Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and begins at Z = 0. The appearance scene uses metres and Y-up, with an explicit transform for the manufacturing view. Display height, preview expansion, object rotation, attachment choice, electronics box settings, wood choices, and visual material tone do not change the exported manufacturing geometry.
 
 ## Architecture
 
@@ -97,6 +99,9 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
 | `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |
 | `src/lib/base.ts` | Wooden base compartment dimensions, internal space and assembly elevation. |
+| `src/lib/wood.ts` | Shared wood species, finish colours and procedural grain settings. |
+| `src/lib/wood-texture.ts` | Deterministic timber colour and pore maps, physical grain scale, and sawn end grain. |
+| `src/components/wood-controls.tsx` | Support and box wood choices, with an optional matching finish. |
 | `src/components/base-controls.tsx` | Optional electronics compartment toggle, usable height and internal space readout. |
 | `src/components/lamp-base.tsx` | Wooden base, compartment walls, lid and cable opening in the appearance preview. |
 | `src/components/mounting-controls.tsx` | Top and bottom attachment selection and matching hardware guidance. |
@@ -126,7 +131,7 @@ The Vitest suite independently examines generated triangles and exported files. 
 - One TPU component and exactly `N − 1` separate PLA components across circles, rounded rectangles, short/long stacks, narrow bands, and alternative layer recipes.
 - Analytic volume agreement, integer-layer Z boundaries, material assignment inside membranes and both alternating gaps, and an accessible separator-removal direction.
 - Stable print geometry when appearance settings change, preview contraction, calibration footprint/counts, and invalid geometry/export gates.
-- Registered binary STL coordinates, ZIP contents, versioned recipe import/export, and attachment migration with identical printable geometry for both hardware options.
+- Registered binary STL coordinates, ZIP contents, versioned recipe import/export, attachment and wood-setting migration, and identical printable geometry across hardware and wood choices.
 
 These are software geometry checks. **Target-slicer acceptance and physical print acceptance remain pending.** Before claiming a tested process, inspect actual toolpaths, verify release and connector bonding on a specimen, record measured pitch, and record the printer/material/profile combination. A 45° bridge direction is only a source-informed starting point; explicit PLA geometry may cause a slicer to use solid-infill or surface paths instead of bridge paths.
 

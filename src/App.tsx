@@ -11,6 +11,7 @@ import { PrintabilityChecks } from '@/components/printability-checks'
 import { LightControls } from '@/components/light-controls'
 import { MountingControls } from '@/components/mounting-controls'
 import { BaseControls } from '@/components/base-controls'
+import { WoodControls } from '@/components/wood-controls'
 import type { RoomStyle } from '@/components/lamp-viewer'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, manufacturingErrors, validateLamp, type LampParameters, type Shape } from '@/lib/lamp'
 import { downloadDesign, downloadSTLs, parseDesign, serializeDesign } from '@/lib/export'
@@ -118,6 +119,7 @@ function App() {
               <p className="field-label">DIFFUSER TONE</p><p className="panel-description">Quiet colours, softly illuminated.</p>
               <div className="material-options">{([{ id: 'ivory', name: 'Warm ivory', caption: 'A warm, paper-like glow', color: '#eee3cc' }, { id: 'natural', name: 'Natural flax', caption: 'Earthy and softly textured', color: '#cdbb94' }, { id: 'white', name: 'Chalk white', caption: 'Clean and understated', color: '#fbfbf7' }] as const).map(material => <button key={material.id} className={cn('material-option', parameters.material === material.id && 'selected')} aria-pressed={parameters.material === material.id} onClick={() => update('material', material.id)}><span className="material-swatch" style={{ background: material.color }} /><span><strong>{material.name}</strong><small>{material.caption}</small></span>{parameters.material === material.id && <Check size={16} />}</button>)}</div>
               <div className="quiet-note"><Leaf size={18} /><p>Glow responds to the {derived.membraneThickness.toFixed(2)} mm TPU membrane. Adjust layer height and TPU layers in Print setup. Colour and light spread are visual approximations.</p></div>
+              <WoodControls parameters={parameters} onUpdate={update} />
               <MountingControls parameters={parameters} onChange={attachment => update('attachment', attachment)} />
               <BaseControls parameters={parameters} onUpdate={update} />
             </TabsContent>

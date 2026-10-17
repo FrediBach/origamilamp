@@ -167,6 +167,27 @@ button svg { pointer-events: none; }
 .material-option strong { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; }
 .material-option small { display: block; font-size: 10px; color: #646854; }
 .material-option > svg { margin-left: auto; color: #5d6b49; }
+.wood-picker { min-width: 0; border: 0; padding: 0; margin: 0 0 20px; }
+.wood-picker legend { padding: 0; margin-bottom: 11px; text-transform: uppercase; }
+.wood-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.wood-option { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0; padding: 5px 5px 7px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; font-size: 10px; line-height: 1.2; }
+.wood-option.selected, .wood-match-option.selected { border-color: #bf7460; background: #f4ede5; }
+.wood-option:hover, .wood-match-option:hover { border-color: #b16a55; }
+.wood-swatch { position: relative; height: 29px; overflow: hidden; border-radius: 2px; background: linear-gradient(95deg, color-mix(in srgb, var(--wood-light) 25%, transparent), transparent 60%), var(--wood-color); box-shadow: inset 0 0 0 1px #39281612; }
+.wood-swatch::before, .wood-swatch::after { content: ''; position: absolute; inset: -25% -10%; opacity: var(--wood-grain-opacity); }
+.wood-swatch::before { background: repeating-linear-gradient(1deg, transparent 0 3px, var(--wood-dark) 3.3px 3.7px, transparent 4px 7px, var(--wood-light) 7.4px 8px, transparent 8.4px 13px); transform: skewY(-4deg); }
+.wood-swatch::after { background: repeating-radial-gradient(ellipse at 18% 150%, transparent 0 5px, var(--wood-dark) 5.7px 6.1px, transparent 7px 12px); transform: scaleX(3.5); }
+.wood-swatch[data-wood="ash"]::after { transform: scaleX(2.5); }
+.wood-swatch[data-wood="maple"]::after { transform: scaleX(5); opacity: .08; }
+.wood-swatch[data-wood="cherry"]::after { transform: scaleX(4.5); }
+.wood-swatch[data-wood="walnut"]::after { transform: scaleX(3); }
+.wood-selection { position: absolute; top: 7px; right: 7px; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; color: #fffaf5; background: #a54330; box-shadow: 0 1px 3px #39281625; }
+.wood-description { min-height: 32px; margin: 9px 0 0; font-size: 10px; line-height: 1.6; color: #646956; }
+.wood-description strong { font-weight: 500; color: #444d3c; }
+.wood-match-option { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 35px; margin-bottom: 7px; padding: 6px 9px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; text-align: left; font-size: 11px; }
+.wood-match-option > span { flex: 1; }
+.wood-match-option small { margin-left: 5px; font-size: 10px; color: #646956; }
+.wood-match-option > svg { color: #795d48; }
 .light-source-picker { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
 .light-source-picker legend { padding: 0; margin-bottom: 11px; }
 .light-source-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }

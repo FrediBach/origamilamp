@@ -3,9 +3,10 @@ import type { BufferGeometry } from 'three'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, validateLamp, type LampParameters } from './lamp'
 import { buildManufacturingGeometry, type ManufacturingOptions } from './manufacturing'
 import { deriveMounting, MOUNTING } from './mounting'
+import { WOOD_FINISHES } from './wood'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -28,6 +29,8 @@ function endMountingEligibility(parameters: LampParameters) {
 
 export function serializeDesign(parameters: LampParameters): string {
   const mounting = deriveMounting(parameters)
+  const boxWood = parameters.boxWood === 'match-frame' ? parameters.frameWood : parameters.boxWood
+  const baseWood = parameters.electronicsBox ? boxWood : parameters.frameWood
   return JSON.stringify({
     schemaVersion: SCHEMA_VERSION,
     application: 'origamilamp.app',
@@ -48,6 +51,8 @@ export function serializeDesign(parameters: LampParameters): string {
         apertureIntrusionMillimetres: MOUNTING.apertureIntrusion,
         clampPlateThicknessMillimetres: MOUNTING.plateThickness,
         attachment: parameters.attachment,
+        frameWood: { species: parameters.frameWood, name: WOOD_FINISHES[parameters.frameWood].name },
+        baseWood: { species: baseWood, name: WOOD_FINISHES[baseWood].name },
         frameConnection: parameters.attachment === 'springs' ? 'short-metal-extension-springs' : 'rigid-bolted-links',
         frameConnectionsPerEnd: 4,
         ...(parameters.attachment === 'springs' ? {
@@ -62,6 +67,7 @@ export function serializeDesign(parameters: LampParameters): string {
       electronicsBox: {
         enabled: parameters.electronicsBox,
         type: 'wooden-base-compartment',
+        wood: { selection: parameters.boxWood, species: boxWood, name: WOOD_FINISHES[boxWood].name },
         internalHeightMillimetres: parameters.electronicsBoxHeight,
         status: 'space-reservation-only',
         hardwareIncludedInSTLs: false,
@@ -85,7 +91,7 @@ export function parseDesign(text: string): LampParameters {
   if (!source || typeof source !== 'object') throw new Error('The design file is missing its parameter object.')
   const result: Record<string, unknown> = {}
   for (const [key, defaultValue] of Object.entries(DEFAULT_PARAMETERS)) {
-    // Lighting, attachment and base controls were added to version 1. Only absent fields receive
+    // Lighting, attachment, base and wood controls were added to version 1. Only absent fields receive
     // defaults; explicit nulls, wrong types and unsupported values stay errors.
     const value = Object.hasOwn(source, key) ? (source as Record<string, unknown>)[key]
       : OPTIONAL_V1_SETTINGS.has(key) ? defaultValue : undefined
@@ -134,12 +140,17 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const d = deriveLamp(p)
   const endMounting = endMountingEligibility(p)
   const incompatibleMount = endMounting.limitations.length > 0
+  const frameWoodName = WOOD_FINISHES[p.frameWood].name
+  const boxWoodName = WOOD_FINISHES[p.boxWood === 'match-frame' ? p.frameWood : p.boxWood].name
+  const baseWoodName = p.electronicsBox ? boxWoodName : frameWoodName
   const electronicsInstructions = p.electronicsBox
     ? `Enabled: wooden base box with ${p.electronicsBoxHeight} mm usable internal height.
+   Wood finish: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
    The wooden box and lid are separate hardware, NOT included in these STL files.
    This reserves space only; verify component fit, cable routing, ventilation and
    electrical design separately.`
     : `Disabled; configured internal height is ${p.electronicsBoxHeight} mm if enabled later.
+   Configured wood finish: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
    No electronics compartment is included in these STL files.`
   const frameInstructions = p.attachment === 'springs'
     ? `Four short metal extension springs per end (eight total) connect the clamps
@@ -149,7 +160,7 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
    initial tension and working travel with a physical specimen; confirm the
    hooks remain retained throughout the intended movement. The preview does not
    calculate spring force or predict dynamic motion.`
-    : `Four bolted supports per end connect the clamp to the oak frame.`
+    : `Four bolted supports per end connect the clamp to the ${frameWoodName.toLowerCase()} frame.`
   const deploymentInstructions = p.attachment === 'springs'
     ? `Remove PLA before fitting clamps. Support the shade while attaching the
    lower and upper spring sets, then balance their tension at a measured
@@ -214,7 +225,9 @@ ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeigh
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
 Attachment: ${p.attachment === 'springs' ? 'short metal springs, four at the top and four at the bottom' : 'bolted supports, four per end'} (separate hardware).
-Display height, expansion, rotation, attachment, electronics box settings, light placement, warmth and ceiling intensity do not alter these print files.
+Support frame wood: ${frameWoodName}. Base board wood: ${baseWoodName}.
+Configured optional box wood: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
+Display height, expansion, rotation, attachment, wood finishes, electronics box settings, light placement, warmth and ceiling intensity do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {
