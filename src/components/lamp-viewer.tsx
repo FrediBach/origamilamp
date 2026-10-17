@@ -109,6 +109,9 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const colors = { ivory: '#e8dfcb', natural: '#d7c7a6', white: '#f5f1e6' }
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
     <mesh geometry={geometry} position={[0, mounting.lowerY / 1000, 0]} castShadow receiveShadow>
+      {/* The diffuser transmits its internal point lights, while retaining its
+          silhouette in the ceiling spotlight's ordinary depth shadow map. */}
+      <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
       <meshStandardMaterial
         color={colors[parameters.material]}
         map={paper}
@@ -373,11 +376,22 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
 
   return <>
     <color attach="background" args={[mode === 'room' ? '#dfded2' : '#ebeae4']} />
-    <ambientLight intensity={0.3} color="#fffaee" />
-    <hemisphereLight args={['#f7f5ed', '#a09b88', 0.95]} />
-    <directionalLight position={[-2, 3, 1]} intensity={2.15} color="#fff5e5" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-2.5} shadow-camera-right={2.5} shadow-camera-top={3} shadow-camera-bottom={-1.5} shadow-normalBias={0.0015} shadow-bias={-0.0001} shadow-radius={4} />
-    <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
-    <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
+    {mode === 'room' ? <>
+      <ambientLight intensity={0.15} color="#fffaee" />
+      <hemisphereLight args={['#f7f5ed', '#a09b88', 0.45]} />
+      {/* A broad ceiling fixture gives furniture compact, downward shadows.
+          Soft daylight from the garden fills the room without a second key. */}
+      <spotLight position={[-0.15, 2.25, 0.2]} color="#fff1dc" intensity={6.5} angle={1.08} penumbra={0.65} distance={5} decay={2}
+        castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
+        shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
+      <directionalLight position={[-1.5, 2, -2.2]} intensity={0.4} color="#e9f0ff" />
+    </> : <>
+      <ambientLight intensity={0.3} color="#fffaee" />
+      <hemisphereLight args={['#f7f5ed', '#a09b88', 0.95]} />
+      <directionalLight position={[-2, 3, 1]} intensity={2.15} color="#fff5e5" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-2.5} shadow-camera-right={2.5} shadow-camera-top={3} shadow-camera-bottom={-1.5} shadow-normalBias={0.0015} shadow-bias={-0.0001} shadow-radius={4} />
+      <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
+      <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
+    </>}
     {mode === 'room' ? <JapaneseRoom /> : <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[20, 20]} />
@@ -435,7 +449,7 @@ export function LampViewer(props: LampViewerProps) {
       }}
     >
       <Canvas
-        shadows
+        shadows="percentage"
         frameloop="demand"
         dpr={[1, 1.75]}
         camera={{ position: [0.7, 0.7, 1.3], fov: 35, near: 0.01, far: 30 }}

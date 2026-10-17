@@ -79,6 +79,9 @@ function Bulb({ source, inverted, lightOn, color }: { source: PreviewLightSource
     <mesh castShadow>
       <latheGeometry args={[profile, 48]} />
       <meshStandardMaterial color="#f5f2e9" emissive={color} emissiveIntensity={lightOn ? 1.65 : 0} roughness={0.48} />
+      {/* The frosted envelope transmits the lamp light but still casts its
+          silhouette in the ceiling light's depth shadow map. */}
+      <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
     </mesh>
     <mesh position={[0, -height * 0.245, 0]} castShadow>
       <cylinderGeometry args={[radius * 0.37, radius * 0.43, height * 0.11, 32]} />
@@ -107,9 +110,10 @@ export function LampLightSources({ parameters, lighting, lightOn }: { parameters
     {lighting.sources.map((source, index) => <group key={`${source.kind}-${index}`}>
       {source.kind === 'led' ? <>
         <Support bottom={48} top={source.centerY - source.height / 2} />
-        <mesh position={[0, source.centerY / 1000, 0]}>
+        <mesh position={[0, source.centerY / 1000, 0]} castShadow>
           <cylinderGeometry args={[source.diameter / 2000, source.diameter / 2000, source.height / 1000, 32]} />
           <meshStandardMaterial color="#f5f2e9" emissive={lighting.color} emissiveIntensity={lightOn ? 1.65 : 0} roughness={0.55} />
+          <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
         </mesh>
       </> : <>
         {index === pendant
@@ -117,7 +121,19 @@ export function LampLightSources({ parameters, lighting, lightOn }: { parameters
           : <Support bottom={48} top={source.centerY - source.height / 2} />}
         <Bulb source={source} inverted={index === pendant} color={lighting.color} lightOn={lightOn} />
       </>}
-      {lightOn && <pointLight position={[0, luminousCenter(source, index === pendant) / 1000, 0]} color={lighting.color} intensity={source.kind === 'led' ? 0.12 : 0.085} distance={1.2} decay={2} />}
+      {lightOn && <pointLight
+        position={[0, luminousCenter(source, index === pendant) / 1000, 0]}
+        color={lighting.color}
+        intensity={source.kind === 'led' ? 0.8 : 0.6}
+        distance={3}
+        decay={2}
+        castShadow
+        shadow-mapSize={[512, 512]}
+        shadow-camera-near={0.005}
+        shadow-normalBias={0.001}
+        shadow-bias={-0.00005}
+        shadow-radius={3}
+      />}
     </group>)}
   </group>
 }
