@@ -2,7 +2,7 @@ import { Cylinder, Lightbulb } from 'lucide-react'
 import { ParameterControl } from '@/components/parameter-control'
 import { Switch } from '@/components/ui/switch'
 import type { LampParameters } from '@/lib/lamp'
-import { deriveLighting } from '@/lib/lighting'
+import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
 import { cn } from '@/lib/utils'
 
 interface LightControlsProps {
@@ -34,7 +34,7 @@ export function LightControls({ parameters, lightOn, onLightChange, onUpdate }: 
         </button>)}
       </div>
     </fieldset>
-    <div className="switch-row light-preview-switch"><div><label htmlFor="finish-light">Preview light</label><p>Room and studio illumination</p></div><Switch id="finish-light" checked={lightOn} onCheckedChange={onLightChange} /></div>
+    <div className="switch-row light-preview-switch"><div><label htmlFor="finish-light">Preview light</label><p>Lamp illumination in room and studio</p></div><Switch id="finish-light" checked={lightOn} onCheckedChange={onLightChange} /></div>
     <div className="light-warmth-control">
       <ParameterControl label="Light warmth" value={parameters.lightTemperature} min={1800} max={6500} step={100} unit="K" onChange={value => onUpdate('lightTemperature', value)} />
       <div className="light-warmth-labels" aria-hidden="true"><span>Candlelight</span><span className="light-color-swatch" style={{ backgroundColor: lighting.color }} /><span>Daylight</span></div>
@@ -50,5 +50,15 @@ export function LightControls({ parameters, lightOn, onLightChange, onUpdate }: 
       : <ParameterControl label="LED module diameter" value={parameters.lightDiameter} min={10} max={100} unit="mm" onChange={value => onUpdate('lightDiameter', value)} />}
     <ParameterControl label="Required radial clearance" value={parameters.lightClearance} min={5} max={30} unit="mm" onChange={value => onUpdate('lightClearance', value)} />
     <p className="control-hint">Clearance includes the top and bottom clamps. Use the space required by your selected light source. Bulbs and fittings are approximate preview shapes.</p>
+    <div className="control-divider" />
+    <fieldset className="ceiling-light-controls">
+      <legend className="field-label">CEILING LIGHT</legend>
+      <p className="control-hint ceiling-light-description">Overhead lighting in the room preview.</p>
+      <div className="light-warmth-control">
+        <ParameterControl label="Ceiling light warmth" value={parameters.ceilingLightTemperature} min={1800} max={6500} step={100} unit="K" onChange={value => onUpdate('ceilingLightTemperature', value)} />
+        <div className="light-warmth-labels" aria-hidden="true"><span>Candlelight</span><span className="light-color-swatch" style={{ backgroundColor: lightTemperatureColor(parameters.ceilingLightTemperature) }} /><span>Daylight</span></div>
+      </div>
+      <ParameterControl label="Ceiling light intensity" value={parameters.ceilingLightIntensity} min={0} max={200} unit="%" hint="0% turns it off. 100% is the standard room brightness." onChange={value => onUpdate('ceilingLightIntensity', value)} />
+    </fieldset>
   </div>
 }

@@ -28,6 +28,8 @@ export interface LampParameters {
   lightDiameter: number
   lightSource: LightSource
   lightTemperature: number
+  ceilingLightTemperature: number
+  ceilingLightIntensity: number
   bulbDiameter: number
   bulbHeight: number
   secondBulbHeight: number
@@ -52,6 +54,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
   lightDiameter: 32, lightSource: 'led', lightTemperature: 2700,
+  ceilingLightTemperature: 4000, ceilingLightIntensity: 100,
   bulbDiameter: 60, bulbHeight: 35, secondBulbHeight: 70,
   lightClearance: 12, measuredPitch: 0,
   rotation: 0, material: 'ivory',
@@ -94,7 +97,7 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   }
   if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance and light source.')
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
-  if (p.lightTemperature < 1800 || p.lightTemperature > 6500 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Light temperature: 1,800–6,500 K; each bulb height: 0–100% of its available vertical travel.')
+  if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; ceiling intensity: 0–200%; each bulb height: 0–100% of its available vertical travel.')
   const aperture = Math.min(p.width, effectiveDepth) - 2 * p.bandWidth
   if (aperture <= 0) add('contours', 'error', 'The inner aperture has collapsed', 'Reduce membrane band width or increase the outer dimensions.')
   else if (aperture < 20) add('aperture-access', 'error', 'The opening is too small for this prototype', 'This prototype requires a nominal opening of at least 20 mm for separator access. Actual removal still needs a calibration test.')

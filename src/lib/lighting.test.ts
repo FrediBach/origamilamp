@@ -6,7 +6,7 @@ import { buildManufacturingGeometry } from './manufacturing'
 import { deriveMounting, MOUNTING } from './mounting'
 import { getPrintabilityFix } from './printability-fixes'
 
-const lightingFields = ['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight'] as const
+const lightingFields = ['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity'] as const
 
 describe('saved light settings', () => {
   it('restores older version 1 recipes and stored designs with their original geometry', () => {
@@ -27,8 +27,17 @@ describe('saved light settings', () => {
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: partial }))).toThrow(/width/)
   })
 
-  it('round trips both bulb placements, warmth, and inactive source dimensions', () => {
-    const parameters: LampParameters = { ...DEFAULT_PARAMETERS, lightSource: 'two-bulbs', lightTemperature: 4800, lightDiameter: 26, bulbDiameter: 75, bulbHeight: 12, secondBulbHeight: 83 }
+  it('adds ceiling defaults to a saved design without changing its lamp settings', () => {
+    const oldParameters: Record<string, unknown> = { ...DEFAULT_PARAMETERS, lightSource: 'bulb', lightTemperature: 2200, bulbHeight: 72 }
+    delete oldParameters.ceilingLightTemperature
+    delete oldParameters.ceilingLightIntensity
+    expect(parseDesign(JSON.stringify({ schemaVersion: 1, parameters: oldParameters }))).toEqual({
+      ...oldParameters, ceilingLightTemperature: 4000, ceilingLightIntensity: 100,
+    })
+  })
+
+  it('round trips bulb placements, independent lamp and ceiling warmth, intensity, and inactive source dimensions', () => {
+    const parameters: LampParameters = { ...DEFAULT_PARAMETERS, lightSource: 'two-bulbs', lightTemperature: 4800, ceilingLightTemperature: 2200, ceilingLightIntensity: 45, lightDiameter: 26, bulbDiameter: 75, bulbHeight: 12, secondBulbHeight: 83 }
     expect(parseDesign(serializeDesign(parameters))).toEqual(parameters)
   })
 
@@ -37,14 +46,28 @@ describe('saved light settings', () => {
     { lightTemperature: null }, { lightTemperature: 1799 }, { lightTemperature: 6501 },
     { bulbDiameter: 0 }, { bulbDiameter: -1 }, { bulbDiameter: 10001 },
     { bulbHeight: -1 }, { bulbHeight: 101 }, { secondBulbHeight: -1 }, { secondBulbHeight: 101 },
+    { ceilingLightTemperature: '4000' }, { ceilingLightTemperature: null }, { ceilingLightTemperature: 1799 }, { ceilingLightTemperature: 6501 },
+    { ceilingLightIntensity: '100' }, { ceilingLightIntensity: null }, { ceilingLightIntensity: -1 }, { ceilingLightIntensity: 201 },
   ])('rejects explicit invalid settings instead of replacing them: %j', change => {
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, ...change } }))).toThrow()
   })
 
   it('accepts the full placement and temperature ranges', () => {
     for (const lightTemperature of [1800, 6500]) {
-      const p = { ...DEFAULT_PARAMETERS, bulbHeight: 0, secondBulbHeight: 100, lightTemperature }
-      expect(parseDesign(serializeDesign(p))).toEqual(p)
+      for (const ceilingLightIntensity of [0, 200]) {
+        const p = { ...DEFAULT_PARAMETERS, bulbHeight: 0, secondBulbHeight: 100, lightTemperature, ceilingLightTemperature: lightTemperature, ceilingLightIntensity }
+        expect(parseDesign(serializeDesign(p))).toEqual(p)
+      }
+    }
+  })
+
+  it('rejects non-finite ceiling settings before generating geometry', () => {
+    for (const field of ['ceilingLightTemperature', 'ceilingLightIntensity'] as const) {
+      for (const value of [NaN, Infinity, -Infinity]) {
+        expect(validateLamp({ ...DEFAULT_PARAMETERS, [field]: value })).toEqual([
+          expect.objectContaining({ id: 'finite', status: 'error' }),
+        ])
+      }
     }
   })
 })
@@ -136,10 +159,10 @@ describe('light clearance and manufacturing', () => {
     expect(getPrintabilityFix(p, 'mounting-clearance')).toBeUndefined()
   })
 
-  it('leaves all print vertices and triangles unchanged by source, placement, and warmth', () => {
+  it('leaves all print vertices and triangles unchanged by source, placement, warmth, and ceiling light', () => {
     const p = { ...DEFAULT_PARAMETERS, pleats: 4 }
     const a = buildManufacturingGeometry(p)
-    const b = buildManufacturingGeometry({ ...p, lightSource: 'two-bulbs', lightTemperature: 6500, bulbHeight: 0, secondBulbHeight: 100, bulbDiameter: 80 })
+    const b = buildManufacturingGeometry({ ...p, lightSource: 'two-bulbs', lightTemperature: 6500, ceilingLightTemperature: 1800, ceilingLightIntensity: 0, bulbHeight: 0, secondBulbHeight: 100, bulbDiameter: 80 })
     try {
       for (const key of ['tpu', 'pla'] as const) {
         expect(b[key].getAttribute('position').array).toEqual(a[key].getAttribute('position').array)

@@ -5,7 +5,7 @@ import { buildManufacturingGeometry, type ManufacturingOptions } from './manufac
 import { deriveMounting, MOUNTING } from './mounting'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_LIGHTING_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight'])
+const OPTIONAL_LIGHTING_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -173,7 +173,7 @@ ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removabl
 ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeight.toFixed(3)} mm compressed
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
-Display height, expansion, rotation, light placement and warmth do not alter these print files.
+Display height, expansion, rotation, light placement, warmth and ceiling intensity do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {

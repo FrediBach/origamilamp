@@ -6,7 +6,7 @@ import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { buildExpandedGeometry } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
-import { deriveLighting } from '@/lib/lighting'
+import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
 import { LampMounting } from '@/components/lamp-mounting'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 
@@ -381,7 +381,7 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
       <hemisphereLight args={['#f7f5ed', '#a09b88', 0.45]} />
       {/* A broad ceiling fixture gives furniture compact, downward shadows.
           Soft daylight from the garden fills the room without a second key. */}
-      <spotLight position={[-0.15, 2.25, 0.2]} color="#fff1dc" intensity={6.5} angle={1.08} penumbra={0.65} distance={5} decay={2}
+      <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={6.5 * parameters.ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
         castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
         shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
       <directionalLight position={[-1.5, 2, -2.2]} intensity={0.4} color="#e9f0ff" />
