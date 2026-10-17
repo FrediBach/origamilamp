@@ -34,7 +34,9 @@ export interface LampParameters {
   boxWood: WoodSpecies | 'match-frame'
   electronicsBox: boolean
   electronicsBoxHeight: number
+  lightIntensity: number
   lightTemperature: number
+  lightFlicker: number
   ceilingLightTemperature: number
   ceilingLightIntensity: number
   bulbDiameter: number
@@ -60,7 +62,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
-  lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightTemperature: 2700,
+  lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightIntensity: 100, lightTemperature: 2700, lightFlicker: 0,
   frameWood: 'oak', boxWood: 'match-frame',
   electronicsBox: false, electronicsBoxHeight: 40,
   ceilingLightTemperature: 4000, ceilingLightIntensity: 100,
@@ -107,7 +109,7 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource) || !['bolted', 'springs'].includes(p.attachment) || !WOOD_SPECIES.includes(p.frameWood) || (p.boxWood !== 'match-frame' && !WOOD_SPECIES.includes(p.boxWood)) || typeof p.electronicsBox !== 'boolean') add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance, wood finish, light source, attachment and electronics box setting.')
   if (typeof p.electronicsBoxHeight !== 'number' || p.electronicsBoxHeight < 20 || p.electronicsBoxHeight > 120) add('base-range', 'error', 'Electronics box height outside the supported range', 'Use 20–120 mm of usable internal height, including when the electronics box is disabled.')
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
-  if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; ceiling intensity: 0–200%; each bulb height: 0–100% of its available vertical travel.')
+  if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || typeof p.lightIntensity !== 'number' || p.lightIntensity < 0 || p.lightIntensity > 200 || typeof p.lightFlicker !== 'number' || p.lightFlicker < 0 || p.lightFlicker > 100 || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; lamp and ceiling intensity: 0–200%; lamp flicker: 0–100%; each bulb height: 0–100% of its available vertical travel.')
   const aperture = Math.min(p.width, effectiveDepth) - 2 * p.bandWidth
   if (aperture <= 0) add('contours', 'error', 'The inner aperture has collapsed', 'Reduce membrane band width or increase the outer dimensions.')
   else if (aperture < 20) add('aperture-access', 'error', 'The opening is too small for this prototype', 'This prototype requires a nominal opening of at least 20 mm for separator access. Actual removal still needs a calibration test.')

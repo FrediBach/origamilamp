@@ -14,6 +14,7 @@ import { LampBase } from '@/components/lamp-base'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 import { BrutalistRoom } from '@/components/brutalist-room'
 import { WoodBox, useWoodMaterials } from '@/components/wood-box'
+import { LAMP_OUTPUT } from '@/components/use-lamp-flicker'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
 export type RoomStyle = 'tatami' | 'brutalist'
@@ -99,6 +100,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
+  const shadeMaterial = useRef<THREE.MeshStandardMaterial>(null)
   // Spring rails sit beyond both flanges to pull the bellows apart.
   const lowerRailY = mounting.lowerRailY / 1000
   const upperRailY = mounting.upperRailY / 1000
@@ -112,6 +114,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           silhouette in the ceiling spotlight's ordinary depth shadow map. */}
       <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
       <meshStandardMaterial
+        ref={shadeMaterial}
         onBeforeCompile={applyShadeTransmission}
         customProgramCacheKey={() => 'shade-transmission-v1'}
         color={colors[parameters.material]}
@@ -120,7 +123,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         side={THREE.DoubleSide}
         emissive={lighting.color}
         emissiveMap={shadeGlow}
-        emissiveIntensity={lightOn ? 1.8 : 0}
+        emissiveIntensity={lightOn ? LAMP_OUTPUT.shade * parameters.lightIntensity / 100 : 0}
       />
     </mesh>
     {/* Separate hardware captures both terminal sheets and carries their pull. */}
@@ -133,7 +136,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
       <WoodBox key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} grain="z" materials={wood} offset={0.73 + y} />,
     ])}
     <LampBase parameters={parameters} frameWidth={w} frameDepth={d} frameMaterials={wood} />
-    <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} />
+    <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} shadeMaterial={shadeMaterial} />
   </group>
 }
 

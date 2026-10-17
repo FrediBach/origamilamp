@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, type Ref, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { LampParameters } from '@/lib/lamp'
 import { deriveLighting, type PreviewLightSource } from '@/lib/lighting'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
 import { luminousCenter, pendantIndex, sampleShadeGlow } from '@/lib/shade-transmission'
+import { LAMP_OUTPUT, useLampFlicker } from '@/components/use-lamp-flicker'
 
 type Lighting = ReturnType<typeof deriveLighting>
 
@@ -35,7 +36,7 @@ function Support({ bottom, top, radius = 0.0018 }: { bottom: number; top: number
   </mesh>
 }
 
-function Bulb({ source, inverted, lightOn, color }: { source: PreviewLightSource; inverted: boolean; lightOn: boolean; color: string }) {
+function Bulb({ source, inverted, brightness, color, emitterRef }: { source: PreviewLightSource; inverted: boolean; brightness: number; color: string; emitterRef: Ref<THREE.MeshStandardMaterial> }) {
   const radius = source.diameter / 2000
   const height = source.height / 1000
   const profile = useMemo(() => {
@@ -50,7 +51,7 @@ function Bulb({ source, inverted, lightOn, color }: { source: PreviewLightSource
   return <group position={[0, source.centerY / 1000, 0]} rotation={[0, 0, inverted ? Math.PI : 0]}>
     <mesh castShadow>
       <latheGeometry args={[profile, 48]} />
-      <meshStandardMaterial color="#f5f2e9" emissive={color} emissiveIntensity={lightOn ? 1.65 : 0} roughness={0.48} />
+      <meshStandardMaterial ref={emitterRef} color="#f5f2e9" emissive={color} emissiveIntensity={LAMP_OUTPUT.emitter * brightness} roughness={0.48} />
       {/* The frosted envelope transmits the lamp light but still casts its
           silhouette in the ceiling light's depth shadow map. */}
       <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
@@ -70,11 +71,13 @@ function Bulb({ source, inverted, lightOn, color }: { source: PreviewLightSource
   </group>
 }
 
-export function LampLightSources({ parameters, lighting, lightOn }: { parameters: LampParameters; lighting: Lighting; lightOn: boolean }) {
+export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial }: { parameters: LampParameters; lighting: Lighting; lightOn: boolean; shadeMaterial: RefObject<THREE.MeshStandardMaterial | null> }) {
   const mounting = deriveMounting(parameters)
   const base = deriveBase(parameters)
   const topSupportY = mounting.upperY + MOUNTING.plateThickness
   const pendant = pendantIndex(lighting.sources)
+  const brightness = lightOn ? parameters.lightIntensity / 100 : 0
+  const { emitters, points } = useLampFlicker(lightOn, parameters.lightIntensity, parameters.lightFlicker, lighting.sources, shadeMaterial)
   return <group>
     {pendant >= 0 && mounting.minimumOpening > 0 && <mesh position={[0, topSupportY / 1000, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
       <cylinderGeometry args={[0.0015, 0.0015, (mounting.minimumOpening + 8) / 1000, 12]} />
@@ -85,19 +88,20 @@ export function LampLightSources({ parameters, lighting, lightOn }: { parameters
         <Support bottom={base.topY} top={source.centerY - source.height / 2} />
         <mesh position={[0, source.centerY / 1000, 0]} castShadow>
           <cylinderGeometry args={[source.diameter / 2000, source.diameter / 2000, source.height / 1000, 32]} />
-          <meshStandardMaterial color="#f5f2e9" emissive={lighting.color} emissiveIntensity={lightOn ? 1.65 : 0} roughness={0.55} />
+          <meshStandardMaterial ref={material => { emitters.current[index] = material }} color="#f5f2e9" emissive={lighting.color} emissiveIntensity={LAMP_OUTPUT.emitter * brightness} roughness={0.55} />
           <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
         </mesh>
       </> : <>
         {index === pendant
           ? <Support bottom={source.centerY + source.height / 2} top={topSupportY} radius={0.0011} />
           : <Support bottom={base.topY} top={source.centerY - source.height / 2} />}
-        <Bulb source={source} inverted={index === pendant} color={lighting.color} lightOn={lightOn} />
+        <Bulb source={source} inverted={index === pendant} color={lighting.color} brightness={brightness} emitterRef={material => { emitters.current[index] = material }} />
       </>}
-      {lightOn && <pointLight
+      {brightness > 0 && <pointLight
+        ref={light => { points.current[index] = light }}
         position={[0, luminousCenter(source, index === pendant) / 1000, 0]}
         color={lighting.color}
-        intensity={source.kind === 'led' ? 0.8 : 0.6}
+        intensity={LAMP_OUTPUT[source.kind] * brightness}
         distance={3}
         decay={2}
         castShadow

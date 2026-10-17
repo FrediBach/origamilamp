@@ -201,6 +201,73 @@ describe('registered exports and design files', () => {
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, width: '180' } }))).toThrow(/width/)
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, expansion: 200 } }))).toThrow(/range/)
   })
+  it.each(['led', 'bulb', 'two-bulbs'] as const)('round trips lamp intensity independently of the ceiling for the %s source', lightSource => {
+    for (const lightIntensity of [0, 62.5, 100, 200]) {
+      const p = { ...DEFAULT_PARAMETERS, lightSource, lightIntensity, ceilingLightIntensity: 35, lightFlicker: 75 }
+      expect(parseDesign(serializeDesign(p))).toEqual(p)
+      expect(validateLamp(p)).not.toContainEqual(expect.objectContaining({ id: 'lighting-range', status: 'error' }))
+    }
+  })
+  it('migrates an absent version 1 lamp intensity to standard brightness without replacing other lighting choices', () => {
+    const p = { ...DEFAULT_PARAMETERS, lightSource: 'two-bulbs' as const, lightTemperature: 3200, lightFlicker: 80, ceilingLightIntensity: 40 }
+    const document = JSON.parse(serializeDesign(p))
+    delete document.parameters.lightIntensity
+    expect(parseDesign(JSON.stringify(document))).toEqual({ ...p, lightIntensity: 100 })
+  })
+  it('rejects explicit malformed and out-of-range lamp intensity values', () => {
+    for (const lightIntensity of [null, true, '50', '', {}, [], -0.1, 200.1]) {
+      const parameters = { ...DEFAULT_PARAMETERS, lightIntensity }
+      expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters }))).toThrow(/lightIntensity|Light setting out of range/)
+      expect(validateLamp(parameters as LampParameters)).toContainEqual(expect.objectContaining({ id: 'lighting-range', status: 'error' }))
+    }
+    for (const lightIntensity of [NaN, Infinity, -Infinity]) {
+      const parameters = { ...DEFAULT_PARAMETERS, lightIntensity }
+      expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters }))).toThrow(/lightIntensity/)
+      expect(validateLamp(parameters)).toContainEqual(expect.objectContaining({ id: 'finite', status: 'error' }))
+    }
+  })
+  it.each([false, true])('keeps both STLs unchanged while recording lamp intensity in the recipe (calibration: %s)', calibration => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4 }
+    const standard = unzipSync(createManufacturingArchive(p, { calibration }))
+    for (const lightIntensity of [0, 200]) {
+      const changed = unzipSync(createManufacturingArchive({ ...p, lightIntensity }, { calibration }))
+      expect(changed['shade-tpu.stl']).toEqual(standard['shade-tpu.stl'])
+      expect(changed['separators-pla.stl']).toEqual(standard['separators-pla.stl'])
+      expect(parseDesign(strFromU8(changed['design.json'])).lightIntensity).toBe(lightIntensity)
+      expect(strFromU8(changed['READ-ME.txt'])).toContain('lamp or ceiling intensity do not alter these print files')
+    }
+  })
+  it.each(['led', 'bulb', 'two-bulbs'] as const)('round trips flicker intensity for the %s source', lightSource => {
+    for (const lightFlicker of [0, 42.5, 100]) {
+      const p = { ...DEFAULT_PARAMETERS, lightSource, lightFlicker }
+      expect(parseDesign(serializeDesign(p))).toEqual(p)
+    }
+  })
+  it('migrates an absent version 1 flicker setting to steady light without replacing other lighting choices', () => {
+    const p = { ...DEFAULT_PARAMETERS, lightSource: 'two-bulbs' as const, lightTemperature: 3200 }
+    const document = JSON.parse(serializeDesign(p))
+    delete document.parameters.lightFlicker
+    expect(parseDesign(JSON.stringify(document))).toEqual({ ...p, lightFlicker: 0 })
+  })
+  it('rejects explicit malformed and out-of-range flicker values', () => {
+    for (const lightFlicker of [null, true, '50', '', {}, [], -0.1, 100.1]) {
+      const parameters = { ...DEFAULT_PARAMETERS, lightFlicker }
+      expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters }))).toThrow(/lightFlicker|Light setting out of range/)
+      expect(validateLamp(parameters as LampParameters)).toContainEqual(expect.objectContaining({ id: 'lighting-range', status: 'error' }))
+    }
+    for (const lightFlicker of [NaN, Infinity, -Infinity]) {
+      expect(validateLamp({ ...DEFAULT_PARAMETERS, lightFlicker })).toContainEqual(expect.objectContaining({ id: 'finite', status: 'error' }))
+    }
+  })
+  it.each([false, true])('keeps both STLs unchanged while recording flicker in the recipe (calibration: %s)', calibration => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4 }
+    const steady = unzipSync(createManufacturingArchive(p, { calibration }))
+    const flickering = unzipSync(createManufacturingArchive({ ...p, lightFlicker: 100 }, { calibration }))
+    expect(flickering['shade-tpu.stl']).toEqual(steady['shade-tpu.stl'])
+    expect(flickering['separators-pla.stl']).toEqual(steady['separators-pla.stl'])
+    expect(parseDesign(strFromU8(flickering['design.json'])).lightFlicker).toBe(100)
+    expect(strFromU8(flickering['READ-ME.txt'])).toContain('warmth, flicker and lamp or ceiling intensity do not alter these print files')
+  })
   it.each(WOOD_SPECIES)('round trips the %s wood on the support frame and box', species => {
     const p = { ...DEFAULT_PARAMETERS, frameWood: species, boxWood: species }
     const serialized = serializeDesign(p)

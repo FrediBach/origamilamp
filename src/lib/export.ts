@@ -6,7 +6,7 @@ import { deriveMounting, MOUNTING } from './mounting'
 import { WOOD_FINISHES } from './wood'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -227,7 +227,7 @@ No fittings, peel tabs, raft, prime tower or process margins are modeled.
 Attachment: ${p.attachment === 'springs' ? 'short metal springs, four at the top and four at the bottom' : 'bolted supports, four per end'} (separate hardware).
 Support frame wood: ${frameWoodName}. Base board wood: ${baseWoodName}.
 Configured optional box wood: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
-Display height, expansion, rotation, attachment, wood finishes, electronics box settings, light placement, warmth and ceiling intensity do not alter these print files.
+Display height, expansion, rotation, attachment, wood finishes, electronics box settings, light placement, warmth, flicker and lamp or ceiling intensity do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {

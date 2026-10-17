@@ -35,10 +35,12 @@ export function LightControls({ parameters, lightOn, onLightChange, onUpdate }: 
       </div>
     </fieldset>
     <div className="switch-row light-preview-switch"><div><label htmlFor="finish-light">Preview light</label><p>Lamp illumination in room and studio</p></div><Switch id="finish-light" checked={lightOn} onCheckedChange={onLightChange} /></div>
+    <ParameterControl label="Lamp light intensity" value={parameters.lightIntensity} min={0} max={200} unit="%" hint="0% turns it off. 100% is the standard lamp brightness." onChange={value => onUpdate('lightIntensity', value)} />
     <div className="light-warmth-control">
       <ParameterControl label="Light warmth" value={parameters.lightTemperature} min={1800} max={6500} step={100} unit="K" onChange={value => onUpdate('lightTemperature', value)} />
       <div className="light-warmth-labels" aria-hidden="true"><span>Candlelight</span><span className="light-color-swatch" style={{ backgroundColor: lighting.color }} /><span>Daylight</span></div>
     </div>
+    <ParameterControl label="Light flicker" value={parameters.lightFlicker} min={0} max={100} unit="%" hint="0% keeps the light steady. Turn it up for deeper, noticeable bulb flicker." onChange={value => onUpdate('lightFlicker', value)} />
     {bulbs && <div className="bulb-position-controls">
       <ParameterControl label="Bulb height" value={parameters.bulbHeight} min={0} max={100} unit="%" hint={positionHint(0)} onChange={value => onUpdate('bulbHeight', value)} />
       {parameters.lightSource === 'two-bulbs' && <ParameterControl label="Second bulb height" value={parameters.secondBulbHeight} min={0} max={100} unit="%" hint={positionHint(1)} onChange={value => onUpdate('secondBulbHeight', value)} />}
