@@ -5,6 +5,8 @@ import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { buildExpandedGeometry } from '@/lib/preview-geometry'
+import { deriveMounting, MOUNTING } from '@/lib/mounting'
+import { LampMounting } from '@/components/lamp-mounting'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
 
@@ -81,6 +83,7 @@ function Lamp({ parameters, lightOn }: Pick<LampViewerProps, 'parameters' | 'lig
   const wood = useSurfaceTexture('wood')
   const paper = useSurfaceTexture('paper')
   const { displayHeight } = deriveLamp(parameters)
+  const mounting = deriveMounting(parameters)
   const height = displayHeight / 1000
   const depth = parameters.shape === 'circle' ? parameters.width : parameters.depth
   const bounds = Array.from({ length: 17 }, (_, i) => {
@@ -91,10 +94,15 @@ function Lamp({ parameters, lightOn }: Pick<LampViewerProps, 'parameters' | 'lig
   })
   const w = Math.max(...bounds.map(value => value[0])) / 1000 + 0.035
   const d = Math.max(...bounds.map(value => value[1])) / 1000 + 0.035
-  const frameHeight = height + 0.086
+  // The brackets lap onto the top of the oak rails and bolt through them.
+  const lowerRailY = mounting.lowerRailY / 1000
+  const upperRailY = mounting.upperRailY / 1000
+  const railHeight = MOUNTING.frameRailHeight / 1000
+  const postBottom = 0.015
+  const postTop = upperRailY + railHeight / 2
   const colors = { ivory: '#e8dfcb', natural: '#d7c7a6', white: '#f5f1e6' }
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
-    <mesh geometry={geometry} position={[0, 0.066, 0]} castShadow receiveShadow>
+    <mesh geometry={geometry} position={[0, mounting.lowerY / 1000, 0]} castShadow receiveShadow>
       <meshStandardMaterial
         color={colors[parameters.material]}
         map={paper}
@@ -104,13 +112,14 @@ function Lamp({ parameters, lightOn }: Pick<LampViewerProps, 'parameters' | 'lig
         emissiveIntensity={lightOn ? 0.19 : 0}
       />
     </mesh>
-    {/* External oak mounting frame: deliberately separate from the print. */}
-    {[-1, 1].flatMap(x => [-1, 1].map(z => <Box key={`${x}-${z}`} position={[x * w / 2, frameHeight / 2 + 0.015, z * d / 2]} size={[0.012, frameHeight, 0.012]} color="#ae8051" map={wood} />))}
-    {[0.043, frameHeight + 0.01].flatMap(y => [
-      <Box key={`front-${y}`} position={[0, y, d / 2]} size={[w + 0.012, 0.014, 0.012]} color="#b68a58" map={wood} />,
-      <Box key={`back-${y}`} position={[0, y, -d / 2]} size={[w + 0.012, 0.014, 0.012]} color="#b68a58" map={wood} />,
-      <Box key={`left-${y}`} position={[-w / 2, y, 0]} size={[0.012, 0.014, d]} color="#b68a58" map={wood} />,
-      <Box key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, 0.014, d]} color="#b68a58" map={wood} />,
+    {/* Separate hardware captures both terminal sheets and carries their pull. */}
+    <LampMounting parameters={parameters} frameWidth={w} frameDepth={d} />
+    {[-1, 1].flatMap(x => [-1, 1].map(z => <Box key={`${x}-${z}`} position={[x * w / 2, (postTop + postBottom) / 2, z * d / 2]} size={[0.012, postTop - postBottom, 0.012]} color="#ae8051" map={wood} />))}
+    {[lowerRailY, upperRailY].flatMap(y => [
+      <Box key={`front-${y}`} position={[0, y, d / 2]} size={[w + 0.012, railHeight, 0.012]} color="#b68a58" map={wood} />,
+      <Box key={`back-${y}`} position={[0, y, -d / 2]} size={[w + 0.012, railHeight, 0.012]} color="#b68a58" map={wood} />,
+      <Box key={`left-${y}`} position={[-w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
+      <Box key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
     ])}
     <Box position={[0, 0.042, 0]} size={[w - 0.008, 0.012, d - 0.008]} color="#b38a59" map={wood} />
     <mesh position={[0, 0.063 + height / 2, 0]}>

@@ -1,3 +1,5 @@
+import { deriveMounting } from './mounting'
+
 export type Shape = 'rounded-rectangle' | 'circle' | 'polygon'
 
 export interface LampParameters {
@@ -60,10 +62,11 @@ export function deriveLamp(p: LampParameters) {
   const separatorThickness = p.layerHeight * p.separatorLayers
   const compressedHeight = (sheets * p.tpuLayers + separators * p.separatorLayers) * p.layerHeight
   const freeSpan = p.bandWidth - p.innerConnector - p.outerConnector
-  // A generous arclength bound for the visual approximation, not an expansion prediction.
-  const estimatedMaxHeight = compressedHeight + Math.max(0, freeSpan) * sheets
-  const displayHeight = compressedHeight + (p.height - compressedHeight) * p.expansion / 100
-  return { sheets, separators, membraneThickness, separatorThickness, compressedHeight, freeSpan, estimatedMaxHeight, displayHeight }
+  const { activeLegs, displayHeight } = deriveMounting(p)
+  // Terminal membranes stay flat in their clamps. Only the remaining membrane
+  // spans contribute axial rise; this is an arclength bound, not a force model.
+  const estimatedMaxHeight = Math.max(compressedHeight, Math.max(0, freeSpan) * activeLegs)
+  return { sheets, separators, membraneThickness, separatorThickness, compressedHeight, freeSpan, activeLegs, estimatedMaxHeight, displayHeight }
 }
 
 export function validateLamp(p: LampParameters): Diagnostic[] {
@@ -75,6 +78,7 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
     return diagnostics
   }
   const d = deriveLamp(p)
+  const mount = deriveMounting(p)
   const effectiveDepth = p.shape === 'circle' ? p.width : p.depth
   const positive = [p.width, effectiveDepth, p.height, p.bandWidth, p.layerHeight, p.innerConnector, p.outerConnector, p.extrusionWidth, p.bedWidth, p.bedDepth, p.bedHeight, p.lightDiameter].every(n => n > 0)
   if (!positive || p.lightClearance < 0 || p.measuredPitch < 0) add('dimensions', 'error', 'Dimensions must be positive', 'Use positive dimensions, and non-negative light clearance and measured pitch.')
@@ -104,7 +108,13 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   else add('build-volume', 'pass', 'Compressed geometry fits', `${p.width.toFixed(0)} × ${effectiveDepth.toFixed(0)} × ${d.compressedHeight.toFixed(1)} mm. Usable build area must already reserve space for margins and process structures.`)
   if (aperture < p.lightDiameter + 2 * p.lightClearance) add('light-clearance', 'error', 'Light module clearance is too small', `The aperture needs at least ${(p.lightDiameter + 2 * p.lightClearance).toFixed(1)} mm for the selected core and clearance. Check the expanded fit physically too.`)
   else add('light-clearance', 'pass', 'Nominal light clearance available', 'This checks the undeployed aperture only. Use an external mount and the LED module’s specified thermal and ventilation clearances.')
-  if (p.height < d.compressedHeight || p.height > d.estimatedMaxHeight) add('height', 'warning', 'Display height exceeds the preview envelope', 'The target is outside the approximate membrane-span envelope. Lower the target or adjust pleat count; a physical sample determines achievable deployment.')
+  if (mount.minimumOpening < p.lightDiameter + 2 * p.lightClearance) add('mounting-clearance', 'error', 'Mounting clamps reduce light clearance', `The clamp opening is ${mount.minimumOpening.toFixed(1)} mm after the two 6 mm inward lips. The core and its selected clearance need ${(p.lightDiameter + 2 * p.lightClearance).toFixed(1)} mm.`)
+  else add('mounting-clearance', 'pass', 'Light fits through the mounting clamps', `${mount.minimumOpening.toFixed(1)} mm clear opening after the clamp lips. Confirm the module’s ventilation and thermal requirements separately.`)
+  if (mount.gripWidth < 4) add('mounting-grip', 'warning', 'Terminal bands need a wider grip', `Only ${mount.gripWidth.toFixed(1)} mm is available for the clamp. Increase membrane band width to leave at least 4 mm of grip and room for the outer fold exit. The printable shade is unchanged.`)
+  if (!mount.activeLegs) add('mounting-height', 'warning', 'One pleat cannot use this mounting arrangement', 'The first and last membranes are held flat as gripping flanges, leaving no active folding span. The preview stays compressed; use at least two pleats for a mounted preview. A one-pleat calibration print remains available.')
+  else if (d.displayHeight < mount.minimumMountedHeight) add('mounting-height', 'warning', 'Too little space between the end clamps', `The clamp arrangement needs at least ${mount.minimumMountedHeight.toFixed(1)} mm of displayed height. Expand the preview to inspect the separate mounting hardware.`)
+  add('mounting-load', 'warning', 'Attachment load needs a physical test', 'Rigid perimeter clamps capture the top and bottom terminal membranes and attach to an external frame. Grip, sustained tension and TPU deformation need testing with the chosen material; the hardware is separate from the shade export.')
+  if (p.height < d.compressedHeight || p.height > d.estimatedMaxHeight) add('height', 'warning', 'Display height exceeds the preview envelope', 'The target is outside the approximate free-span envelope with two flat terminal flanges. Lower the target or add pleats; a physical sample determines achievable deployment.')
   if (p.shape === 'polygon' || p.twist !== 0 || p.modulation !== 0) add('experimental-profile', 'warning', 'Sculpted form is preview only', 'Polygon sides, twist and size modulation do not have validated shared connector contours. Reset these to export a constant-section shade.')
   if (p.measuredPitch > 0) {
     const calibratedHeight = p.measuredPitch * p.pleats

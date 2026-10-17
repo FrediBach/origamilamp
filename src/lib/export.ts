@@ -2,10 +2,31 @@ import { strToU8, zipSync } from 'fflate'
 import type { BufferGeometry } from 'three'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, validateLamp, type LampParameters } from './lamp'
 import { buildManufacturingGeometry, type ManufacturingOptions } from './manufacturing'
+import { deriveMounting, MOUNTING } from './mounting'
 
 const SCHEMA_VERSION = 1
 
+/** Eligibility of the terminal sheets, independent of the preview's current
+ * expansion. A collapsed view does not prevent later assembly at a valid height. */
+function endMountingEligibility(parameters: LampParameters) {
+  const mounting = deriveMounting(parameters)
+  const limitations: { code: string; detail: string }[] = []
+  if (!mounting.activeLegs) limitations.push({
+    code: 'no-active-folds',
+    detail: 'The two flat terminal membranes leave no active folding span. Use at least two pleats for this mounting arrangement.',
+  })
+  if (mounting.gripWidth < 4) limitations.push({
+    code: 'insufficient-terminal-grip',
+    detail: `Only ${mounting.gripWidth.toFixed(1)} mm of terminal grip is available; this clamp concept needs at least 4 mm. Widen the membrane band or design a different attachment.`,
+  })
+  return {
+    eligibility: limitations.length ? 'requires-adjusted-end-attachment' : 'candidate-for-physical-calibration',
+    limitations,
+  }
+}
+
 export function serializeDesign(parameters: LampParameters): string {
+  const mounting = deriveMounting(parameters)
   return JSON.stringify({
     schemaVersion: SCHEMA_VERSION,
     application: 'origamilamp.app',
@@ -17,6 +38,17 @@ export function serializeDesign(parameters: LampParameters): string {
       firstLayerHeight: parameters.layerHeight,
       variableLayerHeight: false,
       materials: { 'shade-tpu.stl': 'TPU — permanent diffuser', 'separators-pla.stl': 'PLA — remove every separator' },
+      mounting: {
+        type: 'top-and-bottom-two-piece-perimeter-clamps',
+        status: 'concept-needs-physical-load-testing',
+        ...endMountingEligibility(parameters),
+        flatTerminalMembranes: 2,
+        gripWidthMillimetres: mounting.gripWidth,
+        apertureIntrusionMillimetres: MOUNTING.apertureIntrusion,
+        clampPlateThicknessMillimetres: MOUNTING.plateThickness,
+        frameConnectionsPerEnd: 4,
+        hardwareIncludedInSTLs: false,
+      },
       bridgeDirectionStartingPointDegrees: 45,
       notes: 'The 45° bridge direction is a starting point, not a fold angle or alternating-layer instruction. Explicit PLA parts may produce solid infill instead of bridge paths; inspect the first TPU path above PLA. No printer-specific process profile is included.',
     },
@@ -79,6 +111,28 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const p = options.calibration ? calibrationParameters(parameters) : parameters
   const geometry = buildManufacturingGeometry(parameters, options)
   const d = deriveLamp(p)
+  const endMounting = endMountingEligibility(p)
+  const incompatibleMount = endMounting.limitations.length > 0
+  const calibrationInstructions = incompatibleMount
+    ? `6. Use this specimen for separator-release and connector-bonding checks only.
+   The mounting limitations below prevent deployment calibration with the shown
+   flat-end clamps. This geometry has NOT been physically release- or fatigue-validated.`
+    : `6. Measure comfortably deployed height per full pleat with the intended mounting
+   arrangement. Enter that measured pitch into the app. End effects remain an
+   estimate. This geometry has NOT been physically release- or fatigue-validated.`
+  const mountingInstructions = incompatibleMount
+    ? `7. This specimen is NOT compatible with the shown two-piece end-clamp arrangement.
+${endMounting.limitations.map(limitation => `   ${limitation.detail}`).join('\n')}
+   Do not deploy this specimen using the shown flat-end clamps. Adjust the design
+   or independently design and test an alternative attachment before calibrating
+   deployed pitch.`
+    : `7. Hold BOTH ends under tension. The appearance model reserves the first and last
+   TPU membranes as flat gripping flanges. At each end, two separate rigid clamp
+   rings sandwich the inner portion of that flange; leave the outer joining band
+   free to bend. Four bolted supports per end connect the clamp to the oak frame.
+   Clamp screws sit inside the free aperture, not through the thin TPU.
+   Remove PLA before fitting clamps. Secure the bottom first; deploy to a measured
+   comfortable height, then secure the upper clamp. Do not force the target height.`
   const instructions = `ORIGAMI LAMP · ${options.calibration ? 'CALIBRATION SPECIMEN' : 'COMPRESSED SHADE'}
 origamilamp.app | millimetres | geometry recipe v1
 
@@ -97,15 +151,18 @@ origamilamp.app | millimetres | geometry recipe v1
    has not repaired away the fold gaps. At the first TPU layer above PLA, inspect
    whether the paths are bridges, surfaces or infill. 45 degrees is only a bridge
    direction starting point; it does not rotate the model or alternate layers.
-5. First print the short specimen with this section, material, layers and mounts.
+5. First print the short specimen with this section, material and layer recipe.
    Remove every PLA separator, alternating access through the central opening and
    from outside. Check for accidental TPU welds and damaged connectors.
-6. Measure comfortably deployed height per full pleat with the intended mounting
-   arrangement. Enter that measured pitch into the app. End effects remain an
-   estimate. This geometry has NOT been physically release- or fatigue-validated.
-7. Support the diffuser with separate, load-spreading attachment hardware. Use the
-   LED module manufacturer's clearances, temperature and ventilation requirements.
-   The app does not provide electrical design or thermal certification.
+${calibrationInstructions}
+${mountingInstructions}
+   The shown rings, brackets, fasteners and frame are a mounting CONCEPT and are
+   NOT included in these STL files. Grip, tension and creep require physical tests;
+   there is no calculated clamp force, fastener torque or load rating.
+8. Use the LED module manufacturer's clearances, temperature and ventilation
+   requirements. Clamp lips extend ${MOUNTING.apertureIntrusion} mm into each side of the aperture;
+   inspect the actual assembled opening. The app does not provide electrical
+   design or thermal certification.
 
 THIS ASSEMBLY
 ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removable PLA separators

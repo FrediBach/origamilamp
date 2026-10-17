@@ -188,6 +188,35 @@ describe('registered exports and design files', () => {
     expect(parseDesign(serializeDesign(invalid))).toEqual(invalid)
     expect(() => createManufacturingArchive(invalid)).toThrow()
   })
+  it.each([
+    { parameters: { ...DEFAULT_PARAMETERS, pleats: 1 }, reason: 'no-active-folds' },
+    { parameters: { ...DEFAULT_PARAMETERS, shape: 'circle' as const, pleats: 4, bandWidth: 5.4, height: 100 }, reason: 'insufficient-terminal-grip' },
+  ])('exports the mounting limitation with a printable $reason specimen', ({ parameters, reason }) => {
+    const files = unzipSync(createManufacturingArchive(parameters, { calibration: true }))
+    const design = JSON.parse(strFromU8(files['design.json']))
+    const instructions = strFromU8(files['READ-ME.txt'])
+    expect(design.recipe.mounting.eligibility).toBe('requires-adjusted-end-attachment')
+    expect(design.recipe.mounting.limitations).toContainEqual(expect.objectContaining({ code: reason }))
+    expect(design.recipe.mounting.hardwareIncludedInSTLs).toBe(false)
+    expect(instructions).toContain('NOT compatible with the shown two-piece end-clamp arrangement')
+    expect(instructions).toContain(design.recipe.mounting.limitations[0].detail)
+    expect(instructions).toContain('NOT included in these STL files')
+    expect(instructions).not.toContain('Hold BOTH ends under tension')
+    expect(instructions).not.toContain('Measure comfortably deployed height per full pleat')
+    expect(files['shade-tpu.stl'].byteLength).toBeGreaterThan(84)
+    expect(files['separators-pla.stl'].byteLength).toBeGreaterThan(84)
+  })
+  it('retains mounting calibration eligibility when only the preview is collapsed', () => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, height: 80, expansion: 0 }
+    const files = unzipSync(createManufacturingArchive(p))
+    const mounting = JSON.parse(strFromU8(files['design.json'])).recipe.mounting
+    const expandedMounting = JSON.parse(serializeDesign({ ...p, expansion: 100 })).recipe.mounting
+    expect(mounting).toEqual(expandedMounting)
+    expect(mounting.eligibility).toBe('candidate-for-physical-calibration')
+    expect(mounting.limitations).toEqual([])
+    expect(strFromU8(files['READ-ME.txt'])).toContain('Measure comfortably deployed height per full pleat')
+    expect(strFromU8(files['READ-ME.txt'])).not.toContain('NOT compatible')
+  })
   it('packages both aligned binary STLs and specimen instructions', () => {
     const files = unzipSync(createManufacturingArchive(DEFAULT_PARAMETERS, { calibration: true }))
     expect(Object.keys(files).sort()).toEqual(['READ-ME.txt', 'design.json', 'separators-pla.stl', 'shade-tpu.stl'])

@@ -49,7 +49,7 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 4. Export a short calibration specimen. The specimen preserves the selected cross section and process settings, with up to four full pleats.
 5. Import both STLs together as parts of **one assembly**, retain their shared origin and relative placement, and interpret the coordinates as millimetres. Assign the shade to TPU and separators to PLA. Do not independently drop each STL to the bed.
 6. Inspect both alternating connector-layer types in the slicer, print the specimen, and remove every PLA separator. Measure a comfortable deployed pitch per full pleat with the intended attachment arrangement, then enter that pitch to help plan the full shade.
-7. Export the full compressed design once the geometry checks permit it. Add separately designed mounting hardware and an appropriate LED module.
+7. Export the full compressed design once the geometry checks permit it. Capture both terminal TPU membranes in separate two-piece perimeter clamps; connect each end to the frame through four bolted supports. Fit the lower clamp first and secure the upper clamp at the calibrated deployment height. The clamps and other hardware are not included in the shade STL files.
 
 Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. Local storage is a convenience, not a substitute for exporting a recipe.
 
@@ -76,7 +76,9 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/App.tsx` | Canonical UI state, live diagnostics, presets, persistence, imports, and export actions. |
 | `src/lib/lamp.ts` | Parameter types/defaults, exact print arithmetic, calibration parameters, and manufacturing gates. |
 | `src/lib/manufacturing.ts` | Deterministic compressed TPU/PLA boundary meshes and normal-offset contours. |
-| `src/lib/preview-geometry.ts` | Separate approximate expanded surface; apparent radial span contracts as axial rise increases. |
+| `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
+| `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |
+| `src/components/lamp-mounting.tsx` | Two-piece end clamps, bolted support links, and visible frame connections. |
 | `src/lib/export.ts` | Versioned design JSON, binary STL encoding, ZIP packaging, and setup/removal instructions. |
 | `src/components/lamp-viewer.tsx` | Three.js room/studio/manufacturing scenes, camera controls, material appearance, and renderer fallback. |
 | `src/components/layer-inspector.tsx` | Inspectable layer schedule and material regions. |
@@ -87,7 +89,9 @@ The solid generator partitions each cross section into three normal-offset bands
 
 Circle contours and rounded rectangles are supported for manufacture. Rounded rectangles preserve the corner centers while offsetting the corner arcs and straight edges; inner corners must remain rounded. The current conservative constraint is `bandWidth + 0.05 < cornerRadius < min(width, depth) / 2 − 0.05`. Invalid offsets, an aperture smaller than the prototype’s 20 mm minimum, and insufficient free membrane or connector widths block export. The 20 mm rule is a conservative software limit; it does not establish physical removability.
 
-The expanded surface is intentionally a different representation. It consumes free membrane span as axial rise increases, preserving an approximate length budget rather than fixing both radii while stretching the preview. It is not a finite-element simulation or a printable mesh.
+The expanded surface is intentionally a different representation. The first and last membrane sheets remain flat as gripping flanges, leaving `N − 2` active sloping membranes. The outside creases retain their nominal contour while the inside creases retract outward as axial rise consumes the free membrane span. Joining strips stay flat in this approximation. A one-pleat specimen has no active spans and is shown near its compressed height, without the mounted hardware. This is not a finite-element simulation or a printable mesh.
+
+The mounting concept sandwiches the inner portion of each terminal membrane between two rigid perimeter rings, leaving the outer joining band free to flex. The default grip is 8 mm (reduced for narrower bands); the 3 mm clamp plates extend 6 mm inside the free aperture. Four bolts inside the aperture avoid inventing holes through the exported TPU. Separate supports connect each clamp to the frame, with frame-side fasteners and contact between the parts. The clamp opening participates in LED fit checks. These dimensions are a prototype concept, not a verified hardware specification; testing must establish grip, required tension and long-term deformation. No load rating or tightening torque is predicted.
 
 ## Verification
 
@@ -107,8 +111,8 @@ These are software geometry checks. **Target-slicer acceptance and physical prin
 - The export is a registered **two-STL ZIP**, with `shade-tpu.stl`, `separators-pla.stl`, `design.json`, and `READ-ME.txt`. **3MF export is not implemented.** STL has no dependable unit/material metadata; assignment instructions accompany the meshes.
 - No printer-specific G-code, tested slicer project, automatically calibrated material profile, or support-generation route is supplied. The modeled PLA parts already occupy separator volumes; do not duplicate them with automatic supports.
 - Physical folding, release, fatigue, final diameter, achievable height, optical output, and unsupported stability are unvalidated. Entering measured pitch supplies a planning estimate, with end effects still unresolved.
-- The wooden frame and LED core shown in the room are contextual mounting concepts. Exported meshes have open ends and exclude attachment fittings, peel tabs, frame parts, raft, and process structures. Mounting hardware still needs separate design and testing.
-- Light clearance checks use the nominal aperture and user-supplied module dimensions. They do not certify deployed clearance, temperature, ventilation, electrical safety, or thermal performance.
+- The preview now shows both end membranes captured by rigid clamps with bolted frame connections. These clamps, brackets, fasteners, the wooden frame and LED core remain separate hardware concepts. Exported TPU/PLA meshes retain open ends and exclude the rigid hardware, peel tabs, raft and process structures. Mounting grip, stiffness and load capacity still need physical testing.
+- Light clearance checks include the clamp aperture intrusion and user-supplied module dimensions. They do not certify deployed clearance, temperature, ventilation, electrical safety, or thermal performance.
 - The Japanese room uses procedural geometry and textures for a balanced visual setting. It is an atmospheric approximation, not a photographic room scan, calibrated lighting simulation, physics simulation, or certified feng shui assessment.
 - Design remains available through the controls if WebGL cannot render. Keyboard controls, visible focus, labelled inputs, reduced motion, and status text are included; automated accessibility checks do not replace assistive-technology and user testing.
 

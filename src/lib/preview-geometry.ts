@@ -9,24 +9,25 @@ export function buildExpandedGeometry(parameters: LampParameters) {
   const legs = derived.sheets
   const height = derived.displayHeight / 1000
   const freeSpan = Math.max(0.1, derived.freeSpan)
-  const legRise = Math.max(0, (derived.displayHeight - derived.compressedHeight) / legs)
-  // Increasing axial rise consumes the free membrane length. Both contours move
-  // toward the band's centreline; retaining both radii would imply stretch.
+  const legRise = derived.activeLegs > 0 ? Math.max(0, derived.displayHeight / derived.activeLegs) : 0
+  // Flat terminal washers preserve the nominal section for the mounting rings.
+  // The active outer joins keep that same outline. Increasing axial rise uses
+  // free membrane length and retracts the inner creases towards those joins.
   const freeDepth = Math.sqrt(Math.max(0, freeSpan ** 2 - legRise ** 2))
   const apparentBand = Math.max(0.7, freeDepth + parameters.innerConnector + parameters.outerConnector)
-  const contourInset = Math.max(0, (parameters.bandWidth - apparentBand) / 2)
-  const outer = previewContour(parameters, contourInset)
-  const inner = previewContour(parameters, contourInset + apparentBand)
+  const outer = previewContour(parameters, 0)
+  const inner = previewContour(parameters, apparentBand)
+  const terminalInner = previewContour(parameters, parameters.bandWidth)
+  const outerFreeEdge = previewContour(parameters, parameters.outerConnector)
+  const innerFreeEdge = previewContour(parameters, apparentBand - parameters.innerConnector)
   const positions: number[] = []
   const indices: number[] = []
   const uv: number[] = []
 
-  for (let leg = 0; leg < legs; leg += 1) {
+  type Row = { contour: THREE.Vector2[]; fraction: number }
+  function addStrip(from: Row, to: Row) {
     const offset = positions.length / 3
-    for (let edge = 0; edge < 2; edge += 1) {
-      const row = leg + edge
-      const fraction = row / legs
-      const contour = row % 2 === 0 ? inner : outer
+    for (const { contour, fraction } of [from, to]) {
       const modulation = 1 + (parameters.modulation / 100) * Math.sin(fraction * Math.PI * 2)
       const angle = THREE.MathUtils.degToRad(parameters.twist) * fraction
       const cos = Math.cos(angle)
@@ -48,6 +49,28 @@ export function buildExpandedGeometry(parameters: LampParameters) {
     }
   }
 
+  // Sheet 0 and sheet N−1 are full, flat annular flanges. Their free inner
+  // edges fit the clamps; their outer rims remain joined to the active bellows.
+  addStrip({ contour: terminalInner, fraction: 0 }, { contour: outer, fraction: 0 })
+  for (let leg = 1; leg < legs - 1; leg += 1) {
+    const start = (leg - 1) / derived.activeLegs
+    const end = leg / derived.activeLegs
+    const rows: Row[] = leg % 2 === 1
+      ? [{ contour: outer, fraction: start }, { contour: outerFreeEdge, fraction: start }, { contour: innerFreeEdge, fraction: end }, { contour: inner, fraction: end }]
+      : [{ contour: inner, fraction: start }, { contour: innerFreeEdge, fraction: start }, { contour: outerFreeEdge, fraction: end }, { contour: outer, fraction: end }]
+    // Joining bands remain flat at each crease, so the actual sloping free
+    // span follows the right triangle used above rather than stretching it.
+    // Draw shared bands once; the terminal flanges already cover the end bands.
+    addStrip(rows[1], rows[2])
+    if (leg < legs - 2) addStrip(rows[2], rows[3])
+  }
+  if (!derived.activeLegs) {
+    // A two-sheet specimen has no active span after reserving both flanges.
+    // Keep the flat sheets connected at their outer rim in the compressed view.
+    addStrip({ contour: outer, fraction: 0 }, { contour: outer, fraction: 1 })
+  }
+  addStrip({ contour: outer, fraction: 1 }, { contour: terminalInner, fraction: 1 })
+
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
@@ -57,7 +80,8 @@ export function buildExpandedGeometry(parameters: LampParameters) {
   return geometry
 }
 
-function previewContour(parameters: LampParameters, inset: number): THREE.Vector2[] {
+/** Contour points are millimetres in the viewer's XZ plane. */
+export function previewContour(parameters: LampParameters, inset: number): THREE.Vector2[] {
   const width = Math.max(2, parameters.width - 2 * inset)
   const depth = parameters.shape === 'circle' ? width : Math.max(2, parameters.depth - 2 * inset)
   if (parameters.shape === 'circle') {
