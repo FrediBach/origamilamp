@@ -5,6 +5,7 @@ import { buildManufacturingGeometry, type ManufacturingOptions } from './manufac
 import { deriveMounting, MOUNTING } from './mounting'
 
 const SCHEMA_VERSION = 1
+const OPTIONAL_LIGHTING_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -67,12 +68,15 @@ export function parseDesign(text: string): LampParameters {
   if (!source || typeof source !== 'object') throw new Error('The design file is missing its parameter object.')
   const result: Record<string, unknown> = {}
   for (const [key, defaultValue] of Object.entries(DEFAULT_PARAMETERS)) {
-    const value = (source as Record<string, unknown>)[key]
+    // Lighting controls were added to version 1. Only absent new fields receive
+    // defaults; explicit nulls, wrong types and unsupported values stay errors.
+    const value = Object.hasOwn(source, key) ? (source as Record<string, unknown>)[key]
+      : OPTIONAL_LIGHTING_SETTINGS.has(key) ? defaultValue : undefined
     if (typeof value !== typeof defaultValue || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`Missing or invalid setting: ${key}.`)
     result[key] = value
   }
   const parameters = result as unknown as LampParameters
-  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'layer-height'])
+  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'layer-height'])
   const errors = validateLamp(parameters).filter(diagnostic => diagnostic.status === 'error' && scalarErrors.has(diagnostic.id))
   if (parameters.cornerRadius < 0) throw new Error('Corner radius cannot be negative.')
   if (errors.length) throw new Error(errors.map(error => error.title).join(' · '))
@@ -159,7 +163,7 @@ ${mountingInstructions}
    The shown rings, brackets, fasteners and frame are a mounting CONCEPT and are
    NOT included in these STL files. Grip, tension and creep require physical tests;
    there is no calculated clamp force, fastener torque or load rating.
-8. Use the LED module manufacturer's clearances, temperature and ventilation
+8. Use the light source manufacturer's clearances, temperature and ventilation
    requirements. Clamp lips extend ${MOUNTING.apertureIntrusion} mm into each side of the aperture;
    inspect the actual assembled opening. The app does not provide electrical
    design or thermal certification.
@@ -169,7 +173,7 @@ ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removabl
 ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeight.toFixed(3)} mm compressed
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
-Display height, expansion and appearance rotation do not alter these print files.
+Display height, expansion, rotation, light placement and warmth do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {

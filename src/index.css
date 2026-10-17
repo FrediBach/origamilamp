@@ -167,6 +167,23 @@ button svg { pointer-events: none; }
 .material-option strong { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; }
 .material-option small { display: block; font-size: 10px; color: #646854; }
 .material-option > svg { margin-left: auto; color: #5d6b49; }
+.light-source-picker { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
+.light-source-picker legend { padding: 0; margin-bottom: 11px; }
+.light-source-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.light-source-option { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 74px; padding: 10px 4px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; font-size: 10px; }
+.light-source-option.selected { background: #f4ede5; border-color: #bf7460; color: #a54330; }
+.light-source-option:hover { border-color: #b16a55; }
+.light-source-icon { display: flex; align-items: center; gap: 1px; }
+.light-preview-switch { margin-bottom: 22px; }
+.light-warmth-control { margin-bottom: 23px; }
+.light-warmth-control .parameter-control { margin-bottom: 1px; }
+.light-warmth-control .number-field input { width: 39px; }
+.light-warmth-control .slider-track { height: 5px; background: linear-gradient(90deg, #d99747, #edc88c 27%, #f3ead7 65%, #d6e4f3); }
+.light-warmth-control .slider-range { background: transparent; }
+.light-warmth-labels { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #646956; }
+.light-color-swatch { width: 13px; height: 13px; border: 1px solid #8d8d7855; border-radius: 50%; }
+.light-placement-note { margin: -3px 0 17px; font-size: 11px; line-height: 1.6; color: #895e1d; }
+.light-clearance-label { margin: 22px 0 12px; }
 .switch { width: 29px; height: 17px; border: none; padding: 2px; background: #c6caba; border-radius: 100px; flex-shrink: 0; display: inline-flex; align-items: center; }
 .switch[data-state="checked"] { background: #68765b; }
 .switch-thumb { display: block; width: 13px; height: 13px; background: #fffdf3; border-radius: 50%; transition: transform 150ms ease; box-shadow: 0 1px 2px #0001; }

@@ -8,6 +8,7 @@ import { ParameterControl } from '@/components/parameter-control'
 import { OrigamiMark } from '@/components/brand'
 import { LayerInspector } from '@/components/layer-inspector'
 import { PrintabilityChecks } from '@/components/printability-checks'
+import { LightControls } from '@/components/light-controls'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, manufacturingErrors, validateLamp, type LampParameters, type Shape } from '@/lib/lamp'
 import { downloadDesign, downloadSTLs, parseDesign, serializeDesign } from '@/lib/export'
 import { cn } from '@/lib/utils'
@@ -108,11 +109,11 @@ function App() {
               </div></details>
             </TabsContent>
             <TabsContent value="finish">
+              <LightControls parameters={parameters} lightOn={lightOn} onLightChange={setLightOn} onUpdate={update} />
+              <div className="control-divider" />
               <p className="field-label">DIFFUSER TONE</p><p className="panel-description">Quiet colours, softly illuminated.</p>
               <div className="material-options">{([{ id: 'ivory', name: 'Warm ivory', caption: 'A warm, paper-like glow', color: '#eee3cc' }, { id: 'natural', name: 'Natural flax', caption: 'Earthy and softly textured', color: '#cdbb94' }, { id: 'white', name: 'Chalk white', caption: 'Clean and understated', color: '#fbfbf7' }] as const).map(material => <button key={material.id} className={cn('material-option', parameters.material === material.id && 'selected')} aria-pressed={parameters.material === material.id} onClick={() => update('material', material.id)}><span className="material-swatch" style={{ background: material.color }} /><span><strong>{material.name}</strong><small>{material.caption}</small></span>{parameters.material === material.id && <Check size={16} />}</button>)}</div>
-              <div className="control-divider" /><div className="switch-row"><div><label htmlFor="finish-light">Warm light</label><p>Atmospheric preview</p></div><Switch id="finish-light" checked={lightOn} onCheckedChange={setLightOn} /></div>
               <div className="quiet-note"><Leaf size={18} /><p>The look of washi. The flexibility of TPU. Colour and glow are visual approximations of the final print.</p></div>
-              <p className="field-label">LAMP CORE CLEARANCE</p>{control('lightDiameter', 'LED module diameter', 10, 100)}{control('lightClearance', 'Required radial clearance', 5, 30)}<p className="control-hint">Clearance includes the top and bottom clamps. Use the space required by your LED module.</p>
               <details className="advanced-controls mounting-details"><summary>Top and bottom mounting <ChevronDown size={15} /></summary><div className="advanced-body">
                 <p className="mounting-description">Two-piece perimeter clamps hold the flat end membranes. Four bolted supports connect each clamp to the wooden frame.</p>
                 <dl className="mounting-dimensions"><div><dt>Grip around each end</dt><dd>{mounting.gripWidth.toFixed(1)} mm</dd></div><div><dt>Opening inside clamps</dt><dd>{Math.max(0, mounting.minimumOpening).toFixed(0)} mm</dd></div><div><dt>Frame connections</dt><dd>4 top + 4 bottom</dd></div></dl>

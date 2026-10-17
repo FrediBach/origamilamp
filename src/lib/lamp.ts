@@ -1,6 +1,8 @@
 import { deriveMounting } from './mounting'
+import { effectiveLightDiameter } from './lighting'
 
 export type Shape = 'rounded-rectangle' | 'circle' | 'polygon'
+export type LightSource = 'led' | 'bulb' | 'two-bulbs'
 
 export interface LampParameters {
   shape: Shape
@@ -24,6 +26,11 @@ export interface LampParameters {
   bedDepth: number
   bedHeight: number
   lightDiameter: number
+  lightSource: LightSource
+  lightTemperature: number
+  bulbDiameter: number
+  bulbHeight: number
+  secondBulbHeight: number
   lightClearance: number
   measuredPitch: number
   rotation: number
@@ -44,7 +51,9 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
-  lightDiameter: 32, lightClearance: 12, measuredPitch: 0,
+  lightDiameter: 32, lightSource: 'led', lightTemperature: 2700,
+  bulbDiameter: 60, bulbHeight: 35, secondBulbHeight: 70,
+  lightClearance: 12, measuredPitch: 0,
   rotation: 0, material: 'ivory',
 }
 
@@ -74,17 +83,18 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   const d = deriveLamp(p)
   const mount = deriveMounting(p)
   const effectiveDepth = p.shape === 'circle' ? p.width : p.depth
-  const positive = [p.width, effectiveDepth, p.height, p.bandWidth, p.layerHeight, p.innerConnector, p.outerConnector, p.extrusionWidth, p.bedWidth, p.bedDepth, p.bedHeight, p.lightDiameter].every(n => n > 0)
+  const positive = [p.width, effectiveDepth, p.height, p.bandWidth, p.layerHeight, p.innerConnector, p.outerConnector, p.extrusionWidth, p.bedWidth, p.bedDepth, p.bedHeight, p.lightDiameter, p.bulbDiameter].every(n => n > 0)
   if (!positive || p.lightClearance < 0 || p.measuredPitch < 0) add('dimensions', 'error', 'Dimensions must be positive', 'Use positive dimensions, and non-negative light clearance and measured pitch.')
-  if ([p.width, p.depth, p.height, p.bedWidth, p.bedDepth, p.bedHeight, p.lightDiameter, p.lightClearance, p.measuredPitch].some(n => n > 10000)) add('dimension-range', 'error', 'Dimension outside the supported range', 'Dimensions must be no greater than 10,000 mm to preserve manufacturing mesh precision.')
+  if ([p.width, p.depth, p.height, p.bedWidth, p.bedDepth, p.bedHeight, p.lightDiameter, p.bulbDiameter, p.lightClearance, p.measuredPitch].some(n => n > 10000)) add('dimension-range', 'error', 'Dimension outside the supported range', 'Dimensions must be no greater than 10,000 mm to preserve manufacturing mesh precision.')
   if (p.extrusionWidth < 0.2 || p.extrusionWidth > 1.2) add('extrusion-range', 'error', 'Extrusion width outside the supported range', 'Use an intended extrusion width from 0.20 to 1.20 mm, then confirm the paths in your slicer.')
   if (![p.pleats, p.tpuLayers, p.separatorLayers].every(n => Number.isInteger(n) && n >= 1) || p.pleats > 120 || p.tpuLayers > 20 || p.separatorLayers > 20) {
     add('layers', 'error', 'Use whole pleats and print layers', 'Use 1–120 full pleats and 1–20 layers per membrane and separator.')
   } else {
     add('layers', 'pass', 'Layer schedule aligned', `${d.sheets} membranes · ${d.separators} removable separators · ${d.compressedHeight.toFixed(1)} mm compressed. Use the same first-layer height.`)
   }
-  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape and material appearance.')
+  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance and light source.')
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
+  if (p.lightTemperature < 1800 || p.lightTemperature > 6500 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Light temperature: 1,800–6,500 K; each bulb height: 0–100% of its available vertical travel.')
   const aperture = Math.min(p.width, effectiveDepth) - 2 * p.bandWidth
   if (aperture <= 0) add('contours', 'error', 'The inner aperture has collapsed', 'Reduce membrane band width or increase the outer dimensions.')
   else if (aperture < 20) add('aperture-access', 'error', 'The opening is too small for this prototype', 'This prototype requires a nominal opening of at least 20 mm for separator access. Actual removal still needs a calibration test.')
@@ -100,10 +110,11 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   if (d.membraneThickness > 0.8 || d.separatorThickness < 0.3) add('recipe', 'warning', 'Recipe needs release testing', 'Thick membranes or thin separators may resist bending or fuse. Print the calibration specimen first.')
   if (p.width > p.bedWidth || effectiveDepth > p.bedDepth || d.compressedHeight > p.bedHeight) add('build-volume', 'error', 'Compressed shade exceeds the build volume', 'Increase the usable build dimensions or reduce the shade footprint, layers or pleat count. Rotation only affects the appearance preview.')
   else add('build-volume', 'pass', 'Compressed geometry fits', `${p.width.toFixed(0)} × ${effectiveDepth.toFixed(0)} × ${d.compressedHeight.toFixed(1)} mm. Usable build area must already reserve space for margins and process structures.`)
-  if (aperture < p.lightDiameter + 2 * p.lightClearance) add('light-clearance', 'error', 'Light module clearance is too small', `The aperture needs at least ${(p.lightDiameter + 2 * p.lightClearance).toFixed(1)} mm for the selected core and clearance. Check the expanded fit physically too.`)
-  else add('light-clearance', 'pass', 'Nominal light clearance available', 'This checks the undeployed aperture only. Use an external mount and the LED module’s specified thermal and ventilation clearances.')
-  if (mount.minimumOpening < p.lightDiameter + 2 * p.lightClearance) add('mounting-clearance', 'error', 'Mounting clamps reduce light clearance', `The clamp opening is ${mount.minimumOpening.toFixed(1)} mm after the two 6 mm inward lips. The core and its selected clearance need ${(p.lightDiameter + 2 * p.lightClearance).toFixed(1)} mm.`)
-  else add('mounting-clearance', 'pass', 'Light fits through the mounting clamps', `${mount.minimumOpening.toFixed(1)} mm clear opening after the clamp lips. Confirm the module’s ventilation and thermal requirements separately.`)
+  const requiredLightOpening = effectiveLightDiameter(p) + 2 * p.lightClearance
+  if (aperture < requiredLightOpening) add('light-clearance', 'error', 'Light source clearance is too small', `The aperture needs at least ${requiredLightOpening.toFixed(1)} mm for the selected light source and clearance. Check the expanded fit physically too.`)
+  else add('light-clearance', 'pass', 'Nominal light clearance available', 'This checks the undeployed aperture only. Use an external mount and the light source’s specified thermal and ventilation clearances.')
+  if (mount.minimumOpening < requiredLightOpening) add('mounting-clearance', 'error', 'Mounting clamps reduce light clearance', `The clamp opening is ${mount.minimumOpening.toFixed(1)} mm after the two 6 mm inward lips. The light source and its selected clearance need ${requiredLightOpening.toFixed(1)} mm.`)
+  else add('mounting-clearance', 'pass', 'Light fits through the mounting clamps', `${mount.minimumOpening.toFixed(1)} mm clear opening after the clamp lips. Confirm the light source’s ventilation and thermal requirements separately.`)
   if (mount.gripWidth < 4) add('mounting-grip', 'warning', 'Terminal bands need a wider grip', `Only ${mount.gripWidth.toFixed(1)} mm is available for the clamp. Increase membrane band width to leave at least 4 mm of grip and room for the outer fold exit. The printable shade is unchanged.`)
   if (!mount.activeLegs) add('mounting-height', 'warning', 'One pleat cannot use this mounting arrangement', 'The first and last membranes are held flat as gripping flanges, leaving no active folding span. The preview stays compressed; use at least two pleats for a mounted preview. A one-pleat calibration print remains available.')
   else if (d.displayHeight < mount.minimumMountedHeight) add('mounting-height', 'warning', 'Too little space between the end clamps', `The clamp arrangement needs at least ${mount.minimumMountedHeight.toFixed(1)} mm of displayed height. Expand the preview to inspect the separate mounting hardware.`)

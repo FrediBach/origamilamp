@@ -29,7 +29,7 @@ export function ParameterControl({ label, value, min, max, step = 1, unit = 'mm'
     upper = Math.max(limitsChanged ? Math.max(min, max) : upper, value)
     setBounds({ min, max, lower, upper })
   }
-  const accessibleUnit = unit === 'mm' ? 'millimetres' : unit === '°' ? 'degrees' : unit === '%' ? 'percent' : unit
+  const accessibleUnit = unit === 'mm' ? 'millimetres' : unit === '°' ? 'degrees' : unit === '%' ? 'percent' : unit === 'K' ? 'kelvin' : unit
   const accessibleName = `${label}${accessibleUnit ? ` (${accessibleUnit})` : ''}`
   const commit = () => {
     if (draft !== null && draft.trim() !== '' && Number.isFinite(Number(draft))) {

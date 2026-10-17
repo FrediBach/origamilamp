@@ -6,7 +6,9 @@ import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { buildExpandedGeometry } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
+import { deriveLighting } from '@/lib/lighting'
 import { LampMounting } from '@/components/lamp-mounting'
+import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
 
@@ -86,9 +88,9 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useSurfaceTexture('wood')
   const paper = useSurfaceTexture('paper')
-  const { displayHeight } = deriveLamp(parameters)
   const mounting = deriveMounting(parameters)
-  const height = displayHeight / 1000
+  const lighting = useMemo(() => deriveLighting(parameters), [parameters])
+  const shadeGlow = useShadeGlow(parameters, lighting)
   const depth = parameters.shape === 'circle' ? parameters.width : parameters.depth
   const bounds = Array.from({ length: 17 }, (_, i) => {
     const fraction = i / 16
@@ -112,8 +114,9 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         map={paper}
         roughness={0.86}
         side={THREE.DoubleSide}
-        emissive={lightOn ? '#ffcc7e' : '#000000'}
-        emissiveIntensity={lightOn ? 0.19 : 0}
+        emissive={lighting.color}
+        emissiveMap={shadeGlow}
+        emissiveIntensity={lightOn ? 0.6 : 0}
       />
     </mesh>
     {/* Separate hardware captures both terminal sheets and carries their pull. */}
@@ -126,11 +129,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
       <Box key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
     ])}
     <Box position={[0, 0.042, 0]} size={[w - 0.008, 0.012, d - 0.008]} color="#b38a59" map={wood} />
-    <mesh position={[0, 0.063 + height / 2, 0]}>
-      <cylinderGeometry args={[Math.max(0.006, parameters.lightDiameter / 2000), Math.max(0.006, parameters.lightDiameter / 2000), height * 0.86, 24]} />
-      <meshStandardMaterial color="#fff2cf" emissive={lightOn ? '#ffe2a6' : '#000000'} emissiveIntensity={lightOn ? 1.8 : 0} roughness={0.55} />
-    </mesh>
-    {lightOn && <pointLight position={[0, height * 0.6, 0.09]} color="#ffcf8b" intensity={0.2} distance={1.2} decay={2} />}
+    <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} />
   </group>
 }
 
@@ -390,7 +389,7 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
     {/* The furnished room uses the lights' cast shadows. ContactShadows captures
         all visible geometry, including architecture, so reserve that extra
         grounding pass for isolated models to avoid phantom floor patches. */}
-    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}`} />}
+    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}-${parameters.lightSource}-${parameters.lightDiameter}-${parameters.bulbDiameter}-${parameters.bulbHeight}-${parameters.secondBulbHeight}`} />}
     <OrbitControls ref={controls} makeDefault enableDamping={false} enablePan minDistance={0.12} maxDistance={4.5} minPolarAngle={0.15} maxPolarAngle={Math.PI / 2 - 0.015} target={[0, targetY, 0]} />
   </>
 }

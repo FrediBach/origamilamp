@@ -55,7 +55,7 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 
 ## Design and make
 
-1. Choose a circle or soft square/rectangle. Change dimensions, full pleat count, membrane width, appearance, and preview expansion in real time. Open the help icon in the top bar for a guide to the process.
+1. Choose a circle or soft square/rectangle. Change dimensions, full pleat count, membrane width, appearance, and preview expansion in real time. In **Finish**, select an LED column, one bulb, or two bulbs. Adjust each bulb's height independently and set light warmth from 1800–6500 K. Height percentages span the available vertical travel; the controls also show millimetres above the shade base. Open the help icon in the top bar for a guide to the process.
 2. Review the live diagnostics after each change. **View checks** offers a correction button when a reliable parameter adjustment is available, with the proposed changes shown before applying and **Undo correction** for the most recent adjustment. Corrections preserve printer dimensions, LED requirements, and measured calibration; physical testing reminders remain manual. Inspect the compressed TPU body, material assembly, vertical section, and individual print layers. Numeric inputs and keyboard-operable sliders provide equivalent ways to set dimensions.
 3. Set the intended printer’s **usable** build envelope, extrusion width, constant layer height, and integer TPU/PLA layer counts. Reserve space for margins and any prime tower in the usable dimensions you enter.
 4. Export a short calibration specimen. The specimen preserves the selected cross section and process settings, with up to four full pleats.
@@ -63,7 +63,9 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 6. Inspect both alternating connector-layer types in the slicer, print the specimen, and remove every PLA separator. Measure a comfortable deployed pitch per full pleat with the intended attachment arrangement, then enter that pitch to help plan the full shade.
 7. Export the full compressed design once the geometry checks permit it. Capture both terminal TPU membranes in separate two-piece perimeter clamps; connect each end to the frame through four bolted supports. Fit the lower clamp first and secure the upper clamp at the calibrated deployment height. The clamps and other hardware are not included in the shade STL files.
 
-Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. Local storage is a convenience, not a substitute for exporting a recipe.
+Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. Older version 1 designs receive the original LED source and default warmth when the new lighting fields are absent. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. Local storage is a convenience, not a substitute for exporting a recipe.
+
+LED and bulb diameters are remembered separately and the selected diameter is used by the light and mounting clearance checks. Bulb placement and warmth affect the appearance preview only. The bulbs, sockets, stems, and hanging support are approximate hardware concepts, excluded from the shade STL files. The preview reports overlapping bulbs or insufficient vertical room without shrinking their selected diameter.
 
 ## Construction and units
 
@@ -92,6 +94,9 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/lib/manufacturing.ts` | Deterministic compressed TPU/PLA boundary meshes and normal-offset contours. |
 | `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
 | `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |
+| `src/lib/lighting.ts` | Source dimensions, bulb placement, approximate colour temperature, and preview fit checks. |
+| `src/components/light-controls.tsx` | Light-source selection, independent bulb heights, warmth, and source clearance controls. |
+| `src/components/lamp-light-source.tsx` | Bulb and LED meshes, supports, point lights, and height-dependent shade glow. |
 | `src/components/lamp-mounting.tsx` | Two-piece end clamps, bolted support links, and visible frame connections. |
 | `src/lib/export.ts` | Versioned design JSON, binary STL encoding, ZIP packaging, and setup/removal instructions. |
 | `src/components/lamp-viewer.tsx` | Three.js room/studio/manufacturing scenes, camera controls, material appearance, and renderer fallback. |

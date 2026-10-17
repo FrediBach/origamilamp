@@ -1,5 +1,6 @@
 import { deriveLamp, validateLamp, type Diagnostic, type LampParameters } from './lamp'
 import { deriveMounting, MOUNTING } from './mounting'
+import { effectiveLightDiameter } from './lighting'
 
 export interface PrintabilityFix {
   label: string
@@ -8,7 +9,7 @@ export interface PrintabilityFix {
 }
 
 const margin = 0.001
-const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'layer-height'])
+const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'layer-height'])
 const severity = { pass: 0, warning: 1, error: 2 }
 const effectiveDepth = (p: LampParameters) => p.shape === 'circle' ? p.width : p.depth
 const aperture = (p: LampParameters) => Math.min(p.width, effectiveDepth(p)) - 2 * p.bandWidth
@@ -20,7 +21,7 @@ const isPassing = (diagnostics: Diagnostic[], id: string) => !diagnostics.some(d
  * because its severity remains "error" after a proposed change. */
 function deficits(p: LampParameters): Record<string, number> {
   const d = deriveLamp(p), mount = deriveMounting(p)
-  const opening = aperture(p), light = p.lightDiameter + 2 * p.lightClearance
+  const opening = aperture(p), light = effectiveLightDiameter(p) + 2 * p.lightClearance
   return {
     aperture: Math.max(0, 20 - opening),
     corners: p.shape === 'rounded-rectangle' ? Math.max(0, p.bandWidth + 0.05 - p.cornerRadius, p.cornerRadius - (Math.min(p.width, p.depth) / 2 - 0.05)) : 0,
@@ -57,7 +58,7 @@ function reconcile(original: LampParameters, candidate: LampParameters, target: 
   const minBand = Math.max(p.innerConnector + p.outerConnector + requiredFree, p.outerConnector + 2 + requiredGrip)
   const openingMinimum = (minimum: number) => minimum + (aperture(p) < minimum ? extraMargin : 0)
   let requiredOpening = aperture(original) >= 20 || ['contours', 'aperture-access', 'experimental-profile'].includes(target) ? openingMinimum(20) : aperture(original)
-  const lightOpening = p.lightDiameter + 2 * p.lightClearance
+  const lightOpening = effectiveLightDiameter(p) + 2 * p.lightClearance
   requiredOpening = Math.max(requiredOpening, needed('light-clearance') ? openingMinimum(lightOpening) : Math.min(aperture(original), lightOpening))
   requiredOpening = Math.max(requiredOpening, needed('mounting-clearance') ? openingMinimum(lightOpening + 2 * MOUNTING.apertureIntrusion) : Math.min(aperture(original), lightOpening + 2 * MOUNTING.apertureIntrusion))
 
