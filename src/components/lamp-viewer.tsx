@@ -387,9 +387,10 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
       {manufacturing && <gridHelper args={[0.6, 30, '#bcbab1', '#d4d2c9']} position={[0, -0.002, 0]} />}
     </>}
     {manufacturing ? <ManufacturingModel parameters={parameters} mode={mode} /> : <Lamp parameters={parameters} lightOn={lightOn} floorY={floorY} />}
-    {/* Cover the entire bench as well as the lamp, with room for the blur.
-        Keep the room patch inside the threshold and just above the tatami. */}
-    <ContactShadows position={mode === 'room' ? [-0.35, floorY + 0.001, 0.05] : [0, floorY + 0.001, 0]} opacity={0.48} scale={mode === 'room' ? [2.4, 1.7] : 1.5} blur={mode === 'room' ? 1.5 : 2.1} far={0.85} resolution={mode === 'room' ? 1024 : 512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}`} />
+    {/* The furnished room uses the lights' cast shadows. ContactShadows captures
+        all visible geometry, including architecture, so reserve that extra
+        grounding pass for isolated models to avoid phantom floor patches. */}
+    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}`} />}
     <OrbitControls ref={controls} makeDefault enableDamping={false} enablePan minDistance={0.12} maxDistance={4.5} minPolarAngle={0.15} maxPolarAngle={Math.PI / 2 - 0.015} target={[0, targetY, 0]} />
   </>
 }
