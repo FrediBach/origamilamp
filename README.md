@@ -1,6 +1,6 @@
 # Origami Lamp
 
-A browser-based studio for designing expandable TPU bellows lampshades. It combines a live appearance study, inspectable compressed TPU/PLA manufacturing geometry, and a calibration-first export workflow. The intended domain is **origamilamp.app**; this repository does not configure hosting or DNS.
+A browser-based studio for designing expandable TPU bellows lampshades. It combines a live appearance study, inspectable compressed TPU/PLA manufacturing geometry, and a calibration-first export workflow. The production domain is **origamilamp.app**; Vercel build settings are included, while domain assignment and DNS are configured separately.
 
 The design language draws on Dieter Rams’ functional clarity and the warmth, spacing, and materials of traditional Japanese interiors. The application runs locally in the browser, with no account or backend requirement.
 
@@ -23,6 +23,18 @@ npm run preview
 ```
 
 `build` runs TypeScript and produces the static site in `dist/`. `preview` serves that production build locally. A static host can serve `dist/`; custom-domain configuration is a separate deployment step.
+
+### Deploy to Vercel
+
+Import the repository into Vercel and select Node.js 22.x or a newer supported version that satisfies `package.json`. The checked-in `vercel.json` selects Vite, installs from the lockfile with `npm ci`, runs `npm run build`, and serves `dist/`. It adds content-type protection, a referrer policy, and immutable caching for Vite's hashed assets. The app has a single page at `/`, so no catch-all rewrite is needed; missing files and unknown paths should return 404.
+
+Assign `origamilamp.app` to the production deployment and configure its DNS in the Vercel dashboard. No application environment variables are required. If the domain changes, update the absolute URLs in `index.html`, `public/robots.txt`, and `public/sitemap.xml`, and recapture the social preview if the branding changes.
+
+Open Graph and Twitter card tags are in the initial HTML so social crawlers can read them without executing JavaScript. `public/og-image.png` is a 1200 × 630 capture of the app, framed to show its controls and live room preview. The web manifest includes standard and maskable PNG icons, with a separate Apple touch icon. The manifest provides app identity and standalone presentation; offline operation is not implemented.
+
+Image assets are committed and require no generation dependencies during deployment. To regenerate the app icons on macOS, run `swift scripts/generate-brand-assets.swift` from the repository root. To refresh the OG image, start the local app and run `node scripts/capture-og-image.mjs http://127.0.0.1:5173` with Playwright Chromium installed, or prefix the command with `PLAYWRIGHT_CHANNEL=chrome` to use installed Chrome. The capture script adjusts framing only in its browser session; application styles remain unchanged.
+
+After deployment, check `/robots.txt`, `/sitemap.xml`, `/site.webmanifest`, and `/og-image.png` on the production domain and verify a shared link's preview. Vercel configuration reference: [static configuration](https://vercel.com/docs/project-configuration/vercel-json).
 
 For browser integration and accessibility checks, install Playwright’s Chromium once, then run the browser suite:
 
