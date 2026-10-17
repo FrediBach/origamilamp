@@ -421,7 +421,9 @@ export function LampViewer(props: LampViewerProps) {
         frameloop="demand"
         dpr={[1, 1.75]}
         camera={{ position: [0.7, 0.7, 1.3], fov: 35, near: 0.01, far: 30 }}
-        gl={{ antialias: true, alpha: false, localClippingEnabled: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.12 }}
+        // ContactShadows needs transparent clears for its offscreen texture.
+        // The scene background still keeps the visible room opaque.
+        gl={{ antialias: true, alpha: true, localClippingEnabled: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.12 }}
         fallback={<ViewerFallback />}
       >
         <Scene {...props} keyboard={keyboard} />
