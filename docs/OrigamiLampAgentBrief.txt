@@ -1,0 +1,337 @@
+BUILD BRIEF: PARAMETRIC EXPANDABLE TPU LAMPSHADE GENERATOR
+Prepared 17 October 2026
+
+PURPOSE
+
+Build a browser-based design tool that generates a flexible bellows lampshade in a compact, compressed configuration for multimaterial FDM printing, plus an approximate preview of the expanded shade. The permanent part is TPU. Removable PLA separates the folded membranes during printing. The deliverable is usable manufacturing geometry with a clear material assignment and a calibration workflow.
+
+The reference is Josh Makeshift's video:
+https://www.youtube.com/watch?v=7Q6UgnpUG1g
+The page currently titles it "It Took 2 days to 3D Print a 5ft (152cm) Lamp Shade in One Piece"; an earlier indexed title is "I 3D Printed a 5FT Lamp (On a Normal Sized Printer)."
+
+SOURCE STATUS
+
+The video description and its English automatic transcript were reviewed, along with the creator's accompanying project comments. The construction below is an engineering proposal inferred from the demonstrated bellows technique. It is not the creator's exact CAD, and it has not been physically printed or mechanically validated here.
+
+Brief source observations:
+- The video describes a rounded-square shade, a 45-degree bridge-direction adjustment that improved release, and about five hours of separator removal. [1]
+- The creator's project comments specify white TPU, PLA separators, 0.2 mm layers, two TPU layers and two PLA layers, and use of a dual-nozzle printer without custom G-code. [2]
+- Bambu Studio defines bridge direction separately from support pattern angle. A bridge angle is a toolpath setting, not a geometric fold angle. [3]
+
+Everything described as a proposed implementation, parameter, formula, default, check, or UI feature below is a requirement for the new app, not an additional claim about the video.
+
+1. CONSTRUCTION AND TOPOLOGY
+
+Use thin, flat, closed-loop sheets connected alternately along their inner and outer perimeters. Think of each sheet as a washer: a circular washer for a round shade, or a rounded-square frame for the reference style.
+
+The connection sequence is:
+- Sheet 0 connects to sheet 1 at the OUTER rim.
+- Sheet 1 connects to sheet 2 at the INNER rim.
+- Sheet 2 connects to sheet 3 at the OUTER rim.
+- Continue alternating to the last sheet.
+
+The resulting TPU is one continuous accordion wall. Across most of each space between sheets, PLA provides a removable separator. The TPU connector occupies the rest of that space at the appropriate rim.
+
+This material assignment must be spatially explicit. During a nominal separator layer, TPU is still printed at the joining rim while PLA occupies the remaining area. Simply switching the entire horizontal layer between TPU and PLA produces separate washers rather than the intended connected shade.
+
+The printing sequence is compressed. Removing PLA frees the membranes to bend and open; the shade is then attached to an external frame or mounting rings at the chosen display height.
+
+2. START WITH A CONSTANT CROSS SECTION
+
+First support a circle and a rounded rectangle/square, aligned along the Z axis. Preserve a constant section through the stack for the first working version.
+
+Let O and I be filled planar regions bounded by the outer and inner contours. Require I to lie strictly inside O. The membrane footprint is:
+
+    D = O minus I
+
+For a circle:
+
+    outer radius = ro
+    inner radius = ri
+    membrane width d = ro - ri
+    inner connector width = wi
+    outer connector width = wo
+
+Connector footprints:
+
+    Cinner = annulus from ri to ri + wi
+    Couter = annulus from ro - wo to ro
+
+Require d > wi + wo, with an additional usable free-membrane margin. A small positive remainder alone does not establish useful flexibility.
+
+For rounded rectangles, construct the connector footprints with valid contour offsets. Define widths as distances normal to the relevant contour, not arbitrary scaling factors. Validate corner radii and offset results; reject collapsed or self-intersecting contours. A constant outward/inward offset is preferable to independently scaled inner and outer rectangles.
+
+3. USE INTEGER PRINT LAYERS AS THE SOURCE OF TRUTH
+
+Inputs:
+
+    h   = nominal layer height, millimetres
+    nt  = integer TPU layers per membrane
+    ns  = integer separator layers
+    N   = number of membrane sheets
+
+Derived values:
+
+    t = nt * h
+    s = ns * h
+    zk = k * (t + s), for k = 0 ... N-1
+
+Use integer layer indices internally and convert to millimetres at output. Avoid accumulated floating-point Z errors.
+
+A reference recipe is h = 0.2 mm, nt = 2, ns = 2, giving t = 0.4 mm and s = 0.4 mm. Treat the recipe as a calibration starting point, with material- and printer-specific settings still required.
+
+For a fixed-height first implementation, require the first layer to use the same height or explicitly account for a first-layer offset. Variable layer height must not silently misalign the membranes, separators, and connectors.
+
+4. GENERATE THE COMPRESSED TPU SOLID
+
+For every k from 0 to N-1, create membrane slab:
+
+    Mk = extrude(D, bottom=zk, height=t)
+
+For every k from 0 to N-2, create connector slab:
+
+    Ck = Couter if k is even, otherwise Cinner
+    Bk = extrude(Ck, bottom=zk+t, height=s)
+
+Union all membrane and connector slabs into one continuous, watertight TPU solid. Use a robust Boolean kernel or construct a single boundary mesh with shared vertices. Do not merely export intersecting closed solids with internal duplicate faces and rely on slicer repair.
+
+It is acceptable to use tiny numerical overlap inside Boolean operations to resolve tolerance problems, but the final nominal dimensions and material boundaries must remain correct. The geometry must not depend on a zero-width contact or a single line of touching vertices for connectivity.
+
+5. GENERATE SEPARATE PLA GEOMETRY
+
+For every gap k:
+
+    Pk = extrude(D minus Ck, bottom=zk+t, height=s)
+
+The nominal TPU and PLA interiors are disjoint; their intended interfaces touch. Do not union PLA with TPU. Keep PLA separators as distinct components or a named collection in the export.
+
+The app's separator thickness is the height of the intentionally occupied inter-membrane space. It is not an extra empty air gap. If a calibrated printer recipe requires an interface clearance, model that as a different parameter and account for it explicitly.
+
+Two manufacturing routes can eventually be supported:
+
+A. Explicit materials, recommended for the first app version:
+   Export both TPU geometry and modeled PLA separator parts. Assign each to its material in the slicer. This makes the intended volumes inspectable and deterministic.
+
+B. Slicer-generated supports, as an advanced export:
+   Export only the compressed TPU body and provide a tested profile that fills every intended fold gap with the second material. It must actually create separators throughout the stack, including those requiring access through the aperture.
+
+Do not mix these routes by adding duplicate automatic supports over already modeled separator solids.
+
+A slicer may classify an explicit modeled separator differently from an automatic support interface. Therefore a bridge-direction setting that works for route B may not govern the same toolpaths in route A. Inspect the actual first TPU layer above PLA and configure the appropriate bridge, solid-infill, or surface direction for the selected route.
+
+6. DESIGN FOR SEPARATOR REMOVAL
+
+At an inner-rim connection, PLA is accessible from the outside. At an outer-rim connection, PLA is accessible through the central aperture. Every separator needs an accessible removal edge.
+
+Proposed optional features:
+- Small PLA peel tabs at the accessible edge.
+- A view that identifies the inside-access and outside-access separators.
+- Experimentally validated break features or segmentation for difficult shapes.
+
+Do not trap a PLA separator in a fully closed TPU pocket. Do not automatically add full-depth slots that let the next TPU sheet sag through and fuse to the preceding TPU sheet. Any score or segmentation must preserve support under the next membrane or be validated by a test print.
+
+Display the exact separator count N-1 so the user can understand post-processing effort. Do not invent a universal minutes-per-separator estimate.
+
+7. DEFINE COUNTS AND DIMENSIONS UNAMBIGUOUSLY
+
+N is the canonical sheet count. If the UI exposes F as a "full pleat" count, define one full pleat as two membrane legs and use N = 2F for this construction. Show both values. End treatment and terminology can otherwise cause off-by-one mistakes.
+
+The exact compressed body height, before fittings or a raft, is:
+
+    Hprint = N*t + (N-1)*s
+
+Illustrative arithmetic, not the dimensions of the source lamp:
+
+    F = 50
+    N = 100
+    t = 0.4 mm
+    s = 0.4 mm
+    Hprint = 100*0.4 + 99*0.4 = 79.6 mm
+
+The complete printable envelope must also include end fittings, peel tabs, and bed margins. The slicer may additionally need space for a prime tower or other process structures.
+
+Increasing N increases the stored membrane area and potential extension while keeping the cross-sectional footprint similar. The method still requires the compressed XY footprint to fit the printer.
+
+8. MAKE THE EXPANDED PREVIEW HONEST
+
+The manufacturing model and the expanded preview must be separate representations backed by the same parameters.
+
+The manufacturing model gives exact nominal solid geometry. The expanded model is a visual estimate of a flexible part. TPU can bend, stretch, change shape, and wrinkle; an expanded annulus is not determined by a rigid hinge rotation alone.
+
+An acceptable MVP preview:
+- Represent the free membrane spans and alternating rim joins.
+- Animate an expansion slider with a coherent accordion shape.
+- Permit a display height while labeling the result approximate.
+- Allow apparent pleat depth and section dimensions to change consistently with the chosen approximation.
+- Keep the printable model unchanged when only the preview expansion changes.
+
+Do not preserve both inner/outer radii, increase axial separation, and claim the membrane has deployed without strain: the distance between corresponding points increases. Do not claim to predict force, fatigue, optical output, final diameter, or unsupported standing height from this preview.
+
+For practical height planning, use calibration:
+
+    measuredPitch = comfortably expanded height per full pleat
+    targetBellowsHeight = targetOverallHeight - fittingHeight
+    F = ceil(targetBellowsHeight / measuredPitch)
+    N = 2F
+
+Measured pitch should come from a short print with the same section, material, membrane thickness, connector width, and mounting arrangement. Treat end effects explicitly or label the result as an estimate. The target height is a design target, not a guaranteed physical output.
+
+9. USER CONTROLS
+
+Basic design:
+- Cross section: rounded square/rectangle or circle.
+- Outer width and depth, or outer diameter.
+- Membrane band width / inner aperture.
+- Corner radius where applicable.
+- Full pleat count and derived membrane count.
+- Target display height and preview expansion.
+- Optional measured pitch from a calibration print.
+
+Print geometry:
+- Layer height and first-layer handling.
+- Integer TPU layers per membrane.
+- Integer separator layers.
+- Inner and outer connector widths.
+- Intended extrusion width / printer minimum feature information.
+- Printer usable build width, depth, and height.
+- Optional peel tabs.
+
+Mounting:
+- Open ends by default.
+- Optional top/bottom attachment bands or tabs.
+- Hole diameter, edge distance, and mounting clearance.
+- A simple representation of an external frame or lamp core to check fit.
+
+Printing recipe:
+- Material names and tool assignments.
+- Suggested bridge direction, with 45 degrees as a source-informed starting value.
+- Separate support pattern and relevant surface/infill directions where the selected export supports them.
+- Profile/version identification and user notes.
+
+Do not imply that the bridge-direction scalar automatically alternates consecutive layers. Do not rotate the actual pleats by 45 degrees as a consequence of that print setting. [3]
+
+10. REQUIRED VIEWS
+
+Provide:
+1. Expanded appearance preview, clearly marked approximate.
+2. Compressed TPU model.
+3. Compressed multimaterial assembly with distinct TPU and PLA identities.
+4. A vertical section through the wall to inspect alternating connectors.
+5. A layer inspector that shows which regions use which material.
+
+Orbit, zoom, and a clipping plane are useful. A cosmetic glowing material may suggest diffusion, but must not be presented as a calibrated lighting simulation.
+
+Keep the design flow focused: choose shape, set size and folds, inspect print geometry, export a short test, then export the full design. There is no need for account creation or a backend for the first implementation if the chosen geometry stack can run locally in the browser.
+
+11. FILE OUTPUTS
+
+Export a multipart 3MF when feasible, with:
+- Millimetre units.
+- Named TPU and PLA parts.
+- Shared origin and preserved transforms.
+- Material identifiers and explicit assignment instructions.
+- The compressed manufacturing configuration as the printable default.
+
+A generic 3MF assembly does not by itself guarantee that every slicer imports printer presets or material-to-tool mappings. Validate the supported target slicer and clearly distinguish a generic geometry file from a tested slicer project.
+
+Fallback: two registered STLs, such as shade-tpu.stl and separators-pla.stl, imported together as parts of one assembly. Keep their coordinate system unchanged and tell the user to interpret them in millimetres; STL does not carry a dependable unit/material assignment.
+
+Also export:
+- Versioned JSON of every design parameter and material recipe note.
+- A short calibration specimen using the selected cross section and process settings.
+- Brief setup and separator-removal instructions.
+
+The first version does not need to generate printer-specific G-code. Use a compatible multimaterial slicer to handle the printer process.
+
+12. ARCHITECTURE
+
+Suggested module boundaries:
+
+    parameters
+    contour generation and offsets
+    compressed TPU/PLA solid generation
+    expanded display geometry
+    validation and diagnostics
+    3D viewer and section inspector
+    3MF/STL/JSON exporters
+    calibration and recipe metadata
+
+Use a canonical parameter object and deterministic generation functions. The viewer should display the same manufacturing geometry that the exporter receives. A rendered surface must not masquerade as a watertight print solid.
+
+Use a robust polygon offset/Boolean implementation and a proper solid/mesh export path. Choose current libraries appropriate to the host project and verify their APIs from their official documentation during implementation. Avoid freezing speculative version numbers in this brief.
+
+A worker is a reasonable place for larger mesh operations if the chosen runtime supports it. Keep it an implementation choice, not an additional product feature.
+
+13. VALIDATION AND ACCEPTANCE CRITERIA
+
+Before manufacturing export:
+- The TPU shade is one connected solid.
+- Every neighboring membrane pair has the intended alternating rim connection.
+- All free membrane spans retain a positive, printable separator region.
+- The central aperture remains open and usable for inside separator removal.
+- TPU and PLA have no positive-volume intersections.
+- No PLA separator is completely enclosed.
+- Every Z boundary matches the selected print-layer schedule.
+- Minimum connector widths and membrane thicknesses survive slicing.
+- Meshes are watertight, consistently wound, positive-volume, and free of degenerate or duplicated internal faces.
+- Contour offsets remain valid at every supported parameter limit.
+- The complete compressed model fits the selected usable build envelope.
+- Export preserves millimetres, origin, part identities, and alignment.
+- The exported assembly reproduces the material layout seen in the app.
+
+Useful geometric regression cases include a circle, a rounded square, few and many sheets, minimum permitted membrane width, and an intentionally invalid contour. These checks address connectivity and manufacturability, rather than merely mirroring UI code.
+
+Slicer acceptance:
+- Inspect a membrane layer and each type of connector/separator layer.
+- Confirm the PLA region remains supported and coherent enough to remove.
+- Confirm TPU continues through the intended connector rims.
+- Check the first TPU path above PLA and the intended crossing of line directions.
+- Confirm no automatic repair fills the fold gaps or detaches sheets.
+- Review seams and tool changes for the chosen material/printer combination.
+
+Physical acceptance:
+- Print a short specimen before a full-height shade.
+- Remove every PLA separator without cutting through the TPU wall.
+- Check that connectors remain bonded and that there are no accidental TPU welds across free gaps.
+- Measure a comfortable deployed pitch with the intended attachment arrangement.
+- Use that result to plan the full shade and record the recipe.
+
+A full annular or rounded-square specimen is preferable to a single narrow strip for predicting deployed shape: it includes the perimeter and corner interactions. A smaller local release coupon may still be useful for material tests.
+
+Physical testing must be reported as pending until someone actually performs it. Successful geometry checks and a clean slicer preview do not establish successful release or a specific expansion ratio.
+
+14. MOUNTING AND LIGHT SOURCE SCOPE
+
+Make the flexible shade a diffuser supported by separate attachment hardware. Design attachment points before completing the frame so they remain accessible. Give mounts wider load-distribution areas than the thin membranes.
+
+Treat an existing LED light module as a separate component with user-supplied dimensions, clearances, and temperature requirements. Reserve space and ventilation according to that module's requirements. The app is not an electrical design or thermal certification tool.
+
+15. LATER EXTENSIONS
+
+After the constant-section model releases and expands successfully, consider taper, changing cross section, nonuniform fold spacing, asymmetric outlines, and controlled twist.
+
+For variable profiles, parameterize shared connector contours first. Each membrane must connect the appropriate preceding and following crease contour, and every pair must retain a matching TPU connection with regenerated PLA regions. Do not simply translate, rotate, or scale identical washers independently; that can disconnect the joining bands or cause collisions.
+
+Design for a specific shape family before attempting arbitrary origami patterns. A general origami simulator, rigid panel tessellator, or an arbitrary creased surface is not required to implement this bellows construction.
+
+16. DEFINITION OF DONE
+
+The first usable release lets a user choose a rounded-square or circular shade, generate valid compressed TPU and PLA parts, inspect alternating joins in section, preview expansion approximately, export a calibration sample, retain a recipe, and export a correctly registered assembly for a supported slicer. Its documentation states which checks were actually run and which physical properties remain unvalidated.
+
+REFERENCES
+
+[1] Josh Makeshift, reference video and English automatic transcript, reviewed 17 October 2026:
+https://www.youtube.com/watch?v=7Q6UgnpUG1g
+Relevant source locations: 0:15-1:02 mechanism and outline; 3:03-3:49 prototype and release tuning; 5:54-6:11 separator thickness and removal; 7:01-7:16 attachments; 7:42-7:48 uneven tension.
+
+[2] JoshMakeshift, creator's accompanying project post and comments. The thread links the exact reference video. The alternating inner/outer explanation is also stated by another commenter; do not misattribute that comment to the creator:
+https://www.reddit.com/r/3Dprinting/comments/1tlusd1/5_ft_152cm_tpu_lamp_shade_printed_in_one_piece/
+
+[3] Bambu Lab, Bambu Studio source, PrintConfig.cpp. See bridge_angle and support_angle:
+https://github.com/bambulab/BambuStudio/blob/master/src/libslic3r/PrintConfig.cpp
+
+[4] Original bellows inspiration linked by the creator: Functional Print Friday, "3D Printed TPU Bellows with PLA Interface Layers - Prints Flat!":
+https://www.youtube.com/watch?v=UFrWfnwD3aU
+
+[5] Related print-process reference linked by the creator: Clough42, "Good Idea? I 3D Printed Custom Way Covers For My Milling Machine!":
+https://www.youtube.com/watch?v=eit2H0NPXNg
