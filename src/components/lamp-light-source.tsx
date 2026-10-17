@@ -3,53 +3,24 @@ import * as THREE from 'three'
 import type { LampParameters } from '@/lib/lamp'
 import { deriveLighting, type PreviewLightSource } from '@/lib/lighting'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
+import { luminousCenter, pendantIndex, sampleShadeGlow } from '@/lib/shade-transmission'
 
 type Lighting = ReturnType<typeof deriveLighting>
 
-// The higher of two bulbs hangs from the frame; the lower stands on the base.
-// This keeps supports clear when the independently adjusted heights cross.
-function pendantIndex(sources: PreviewLightSource[]) {
-  if (sources.length < 2) return -1
-  return sources[0].centerY > sources[1].centerY ? 0 : 1
-}
-
-// A bulb's assembly centre includes its socket. Light comes from the wider,
-// frosted envelope, whose offset follows the bulb's orientation.
-function luminousCenter(source: PreviewLightSource, inverted: boolean) {
-  return source.centerY + (source.kind === 'bulb' ? source.height * 0.19 * (inverted ? -1 : 1) : 0)
-}
-
-/** A small transmission approximation makes the source's height legible through
- * the opaque preview mesh. It is deliberately separate from manufacturing. */
+/** Thickness-dependent transmitted glow, separate from opaque surface shading. */
 export function useShadeGlow(parameters: LampParameters, lighting: Lighting) {
-  const { sources, shadeBottom } = lighting
-  const { displayHeight } = deriveMounting(parameters)
-  const radialDistance = Math.max(15, Math.min(parameters.width, parameters.shape === 'circle' ? parameters.width : parameters.depth) / 2 - parameters.bandWidth / 2)
   const texture = useMemo(() => {
-    const size = 128
-    const data = new Uint8Array(size * 4)
-    const pendant = pendantIndex(sources)
-    const falloff = (y: number, center: number) => radialDistance ** 2 / (radialDistance ** 2 + (y - center) ** 2)
-    for (let row = 0; row < size; row += 1) {
-      const y = shadeBottom + row / (size - 1) * displayHeight
-      let glow = 0
-      sources.forEach((source, index) => {
-        if (source.kind === 'led') {
-          // Distribute the rod's light along its length instead of making a
-          // bright spot at the midpoint of a long diffuser.
-          for (let sample = 0; sample < 7; sample += 1) {
-            glow += falloff(y, source.centerY + (sample / 6 - 0.5) * source.height * 0.9) / 4
-          }
-        } else glow += falloff(y, luminousCenter(source, index === pendant))
-      })
-      const value = Math.round(255 * Math.min(1, glow * 0.8))
+    const glow = sampleShadeGlow(parameters, lighting)
+    const data = new Uint8Array(glow.length * 4)
+    glow.forEach((brightness, row) => {
+      const value = Math.round(255 * brightness)
       data.set([value, value, value, 255], row * 4)
-    }
-    const result = new THREE.DataTexture(data, 1, size, THREE.RGBAFormat)
+    })
+    const result = new THREE.DataTexture(data, 1, glow.length, THREE.RGBAFormat)
     result.magFilter = result.minFilter = THREE.LinearFilter
     result.needsUpdate = true
     return result
-  }, [sources, shadeBottom, displayHeight, radialDistance])
+  }, [parameters, lighting])
   useEffect(() => () => texture.dispose(), [texture])
   return texture
 }

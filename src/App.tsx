@@ -113,7 +113,7 @@ function App() {
               <div className="control-divider" />
               <p className="field-label">DIFFUSER TONE</p><p className="panel-description">Quiet colours, softly illuminated.</p>
               <div className="material-options">{([{ id: 'ivory', name: 'Warm ivory', caption: 'A warm, paper-like glow', color: '#eee3cc' }, { id: 'natural', name: 'Natural flax', caption: 'Earthy and softly textured', color: '#cdbb94' }, { id: 'white', name: 'Chalk white', caption: 'Clean and understated', color: '#fbfbf7' }] as const).map(material => <button key={material.id} className={cn('material-option', parameters.material === material.id && 'selected')} aria-pressed={parameters.material === material.id} onClick={() => update('material', material.id)}><span className="material-swatch" style={{ background: material.color }} /><span><strong>{material.name}</strong><small>{material.caption}</small></span>{parameters.material === material.id && <Check size={16} />}</button>)}</div>
-              <div className="quiet-note"><Leaf size={18} /><p>The look of washi. The flexibility of TPU. Colour and glow are visual approximations of the final print.</p></div>
+              <div className="quiet-note"><Leaf size={18} /><p>Glow responds to the {derived.membraneThickness.toFixed(2)} mm TPU membrane. Adjust layer height and TPU layers in Print setup. Colour and light spread are visual approximations.</p></div>
               <details className="advanced-controls mounting-details"><summary>Top and bottom mounting <ChevronDown size={15} /></summary><div className="advanced-body">
                 <p className="mounting-description">Two-piece perimeter clamps hold the flat end membranes. Four bolted supports connect each clamp to the wooden frame.</p>
                 <dl className="mounting-dimensions"><div><dt>Grip around each end</dt><dd>{mounting.gripWidth.toFixed(1)} mm</dd></div><div><dt>Opening inside clamps</dt><dd>{Math.max(0, mounting.minimumOpening).toFixed(0)} mm</dd></div><div><dt>Frame connections</dt><dd>4 top + 4 bottom</dd></div></dl>
@@ -124,6 +124,7 @@ function App() {
               <div className="recipe-label"><span className="status-dot" /> TPU + removable PLA <span>2 tools</span></div>
               {control('layerHeight', 'Layer height', 0.1, 0.3, 'mm', 0.05)}
               <div className="control-pair">{control('tpuLayers', 'TPU layers', 1, 5, '', 1)}{control('separatorLayers', 'PLA layers', 1, 5, '', 1)}</div>
+              <p className="control-hint">TPU membrane: {derived.membraneThickness.toFixed(2)} mm. Thinner membranes transmit more light and spread the glow farther in the preview.</p>
               <p className="control-hint">Uniform first and subsequent layer heights. No variable layer height.</p>
               <div className="control-divider" /><p className="field-label">CONNECTOR BANDS</p>
               <div className="control-pair">{control('innerConnector', 'Inner rim', 0.6, 3, 'mm', 0.1)}{control('outerConnector', 'Outer rim', 0.6, 3, 'mm', 0.1)}</div>

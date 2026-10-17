@@ -122,7 +122,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         side={THREE.DoubleSide}
         emissive={lighting.color}
         emissiveMap={shadeGlow}
-        emissiveIntensity={lightOn ? 1.2 : 0}
+        emissiveIntensity={lightOn ? 1.8 : 0}
       />
     </mesh>
     {/* Separate hardware captures both terminal sheets and carries their pull. */}
