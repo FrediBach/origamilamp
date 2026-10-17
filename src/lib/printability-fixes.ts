@@ -9,7 +9,7 @@ export interface PrintabilityFix {
 }
 
 const margin = 0.001
-const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'layer-height'])
+const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height'])
 const severity = { pass: 0, warning: 1, error: 2 }
 const effectiveDepth = (p: LampParameters) => p.shape === 'circle' ? p.width : p.depth
 const aperture = (p: LampParameters) => Math.min(p.width, effectiveDepth(p)) - 2 * p.bandWidth

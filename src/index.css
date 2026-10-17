@@ -212,6 +212,12 @@ button svg { pointer-events: none; }
 .mounting-dimensions > div { display: flex; justify-content: space-between; gap: 12px; }
 .mounting-dimensions dt { color: #59624e; }
 .mounting-dimensions dd { font-family: var(--mono); margin: 0; text-align: right; }
+.base-controls { border-top: 1px solid #e5e5dc; margin-top: 18px; padding-top: 18px; }
+.base-controls .switch-row { gap: 12px; }
+.base-settings { padding-top: 22px; }
+.base-dimensions { margin-top: 16px; }
+.base-dimensions > div { flex-wrap: wrap; }
+.base-dimensions dd { margin-left: auto; }
 
 .preview-panel { position: relative; height: var(--workspace-height); min-height: 0; overflow: hidden; background: #e2dbc9; }
 .preview-toolbar { position: absolute; top: 18px; left: 20px; right: 17px; z-index: 2; display: flex; align-items: flex-start; gap: 13px; }

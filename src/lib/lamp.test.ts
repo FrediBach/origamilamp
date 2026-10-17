@@ -71,6 +71,15 @@ describe('bellows parameters and diagnostics', () => {
     }))
     expect(deriveLamp(p)).toEqual(deriveLamp(DEFAULT_PARAMETERS))
   })
+  it('accepts an optional electronics box without changing shade print arithmetic', () => {
+    const p = { ...DEFAULT_PARAMETERS, electronicsBox: true, electronicsBoxHeight: 120 }
+    expect(manufacturingErrors(p)).toEqual([])
+    expect(deriveLamp(p)).toEqual(deriveLamp(DEFAULT_PARAMETERS))
+  })
+  it.each([false, true])('checks internal box height even when enabled is %s', electronicsBox => {
+    expect(validateLamp({ ...DEFAULT_PARAMETERS, electronicsBox, electronicsBoxHeight: 19 })).toContainEqual(expect.objectContaining({ id: 'base-range', status: 'error' }))
+    expect(validateLamp({ ...DEFAULT_PARAMETERS, electronicsBox, electronicsBoxHeight: 121 })).toContainEqual(expect.objectContaining({ id: 'base-range', status: 'error' }))
+  })
   it.each([
     { bandWidth: 95 }, { bandWidth: 3 }, { cornerRadius: 12 }, { cornerRadius: 90 },
     { pleats: 4.5 }, { tpuLayers: 1.5 }, { separatorLayers: 0 }, { layerHeight: 0.01 },
@@ -211,6 +220,48 @@ describe('registered exports and design files', () => {
   it.each([null, 1, true, '', 'elastic-cord', {}, []])('rejects an explicit unsupported attachment: %j', attachment => {
     const document = { schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, attachment } }
     expect(() => parseDesign(JSON.stringify(document))).toThrow(/attachment|Unsupported design value/)
+  })
+  it.each([
+    { electronicsBox: false, electronicsBoxHeight: 20 },
+    { electronicsBox: true, electronicsBoxHeight: 40 },
+    { electronicsBox: true, electronicsBoxHeight: 120 },
+  ])('round trips electronics box settings and hardware recipe: %j', settings => {
+    const p = { ...DEFAULT_PARAMETERS, ...settings }
+    const serialized = serializeDesign(p)
+    expect(parseDesign(serialized)).toEqual(p)
+    expect(JSON.parse(serialized).recipe.electronicsBox).toEqual(expect.objectContaining({
+      enabled: settings.electronicsBox,
+      type: 'wooden-base-compartment',
+      internalHeightMillimetres: settings.electronicsBoxHeight,
+      status: 'space-reservation-only',
+      hardwareIncludedInSTLs: false,
+    }))
+  })
+  it.each([['electronicsBox'], ['electronicsBoxHeight'], ['electronicsBox', 'electronicsBoxHeight']])('migrates absent version 1 base fields: %j', (...missingFields) => {
+    const document = JSON.parse(serializeDesign(DEFAULT_PARAMETERS))
+    missingFields.forEach(key => { delete document.parameters[key] })
+    expect(parseDesign(JSON.stringify(document))).toEqual(DEFAULT_PARAMETERS)
+  })
+  it.each([null, 1, 'true', '', {}, []])('rejects an explicit invalid electronics box switch: %j', electronicsBox => {
+    const document = { schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, electronicsBox } }
+    expect(() => parseDesign(JSON.stringify(document))).toThrow(/electronicsBox/)
+  })
+  it.each([null, true, '40', '', {}, [], 0, 19, 121, -40])('rejects an explicit invalid box height even when disabled: %j', electronicsBoxHeight => {
+    const document = { schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, electronicsBox: false, electronicsBoxHeight } }
+    expect(() => parseDesign(JSON.stringify(document))).toThrow(/electronicsBoxHeight|Electronics box height/)
+  })
+  it.each([false, true])('records box instructions with unchanged STL geometry (calibration: %s)', calibration => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, attachment: 'springs' as const }
+    const ordinary = unzipSync(createManufacturingArchive(p, { calibration }))
+    const boxed = unzipSync(createManufacturingArchive({ ...p, electronicsBox: true, electronicsBoxHeight: 75 }, { calibration }))
+    expect(boxed['shade-tpu.stl']).toEqual(ordinary['shade-tpu.stl'])
+    expect(boxed['separators-pla.stl']).toEqual(ordinary['separators-pla.stl'])
+    expect(parseDesign(strFromU8(boxed['design.json']))).toEqual(expect.objectContaining({ electronicsBox: true, electronicsBoxHeight: 75 }))
+    const instructions = strFromU8(boxed['READ-ME.txt'])
+    expect(instructions).toContain('wooden base box with 75 mm usable internal height')
+    expect(instructions).toContain('The wooden box and lid are separate hardware, NOT included in these STL files.')
+    expect(instructions).toContain('electrical design separately')
+    expect(strFromU8(ordinary['READ-ME.txt'])).toContain('Electronics box: Disabled; configured internal height is 40 mm')
   })
   it.each([false, true])('exports spring instructions with identical STL geometry (calibration: %s)', calibration => {
     const p = { ...DEFAULT_PARAMETERS, pleats: 4 }

@@ -29,6 +29,8 @@ export interface LampParameters {
   lightDiameter: number
   lightSource: LightSource
   attachment: Attachment
+  electronicsBox: boolean
+  electronicsBoxHeight: number
   lightTemperature: number
   ceilingLightTemperature: number
   ceilingLightIntensity: number
@@ -56,6 +58,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
   lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightTemperature: 2700,
+  electronicsBox: false, electronicsBoxHeight: 40,
   ceilingLightTemperature: 4000, ceilingLightIntensity: 100,
   bulbDiameter: 60, bulbHeight: 35, secondBulbHeight: 70,
   lightClearance: 12, measuredPitch: 0,
@@ -97,7 +100,8 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   } else {
     add('layers', 'pass', 'Layer schedule aligned', `${d.sheets} membranes · ${d.separators} removable separators · ${d.compressedHeight.toFixed(1)} mm compressed. Use the same first-layer height.`)
   }
-  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource) || !['bolted', 'springs'].includes(p.attachment)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance, light source and attachment.')
+  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource) || !['bolted', 'springs'].includes(p.attachment) || typeof p.electronicsBox !== 'boolean') add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance, light source, attachment and electronics box setting.')
+  if (typeof p.electronicsBoxHeight !== 'number' || p.electronicsBoxHeight < 20 || p.electronicsBoxHeight > 120) add('base-range', 'error', 'Electronics box height outside the supported range', 'Use 20–120 mm of usable internal height, including when the electronics box is disabled.')
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
   if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; ceiling intensity: 0–200%; each bulb height: 0–100% of its available vertical travel.')
   const aperture = Math.min(p.width, effectiveDepth) - 2 * p.bandWidth

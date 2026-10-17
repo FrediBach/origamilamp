@@ -6,9 +6,11 @@ import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
+import { deriveBase } from '@/lib/base'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
 import { applyShadeTransmission } from '@/lib/shade-material'
 import { LampMounting } from '@/components/lamp-mounting'
+import { LampBase } from '@/components/lamp-base'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 import { BrutalistRoom } from '@/components/brutalist-room'
 
@@ -129,7 +131,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
       <Box key={`left-${y}`} position={[-w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
       <Box key={`right-${y}`} position={[w / 2, y, 0]} size={[0.012, railHeight, d]} color="#b68a58" map={wood} />,
     ])}
-    <Box position={[0, 0.042, 0]} size={[w - 0.008, 0.012, d - 0.008]} color="#b38a59" map={wood} />
+    <LampBase parameters={parameters} frameWidth={w} frameDepth={d} wood={wood} />
     <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} />
   </group>
 }
@@ -341,7 +343,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
   const floorY = mode === 'room' ? ROOM_FLOOR_Y : STUDIO_FLOOR_Y
   const height = manufacturing ? compressedHeight / 1000 : parameters.attachment === 'springs'
     ? (mounting.upperRailY + MOUNTING.frameRailHeight / 2) / 1000
-    : displayHeight / 1000 + 0.1
+    : (displayHeight + deriveBase(parameters).lift) / 1000 + 0.1
   const footprint = Math.max(parameters.width, parameters.depth) / 1000
   // Leave a little floor margin around the full-length frame feet.
   const fit = Math.max(height * (manufacturing ? 1.95 : 2.05), footprint * 2.6, 0.22)
@@ -408,7 +410,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
     {/* The furnished room uses the lights' cast shadows. ContactShadows captures
         all visible geometry, including architecture, so reserve that extra
         grounding pass for isolated models to avoid phantom floor patches. */}
-    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}-${parameters.attachment}-${parameters.lightSource}-${parameters.lightDiameter}-${parameters.bulbDiameter}-${parameters.bulbHeight}-${parameters.secondBulbHeight}`} />}
+    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}-${parameters.attachment}-${parameters.electronicsBox}-${parameters.electronicsBoxHeight}-${parameters.lightSource}-${parameters.lightDiameter}-${parameters.bulbDiameter}-${parameters.bulbHeight}-${parameters.secondBulbHeight}`} />}
     <OrbitControls ref={controls} makeDefault enableDamping={false} enablePan minDistance={0.12} maxDistance={4.5} minPolarAngle={0.15} maxPolarAngle={Math.PI / 2 - 0.015} target={[0, targetY, 0]} />
   </>
 }

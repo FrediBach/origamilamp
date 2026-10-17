@@ -1,4 +1,5 @@
 import type { LampParameters } from './lamp'
+import { deriveBase } from './base'
 
 /** Separate, conceptual mounting hardware. All dimensions are millimetres. */
 export const MOUNTING = {
@@ -39,7 +40,7 @@ export function deriveMounting(p: LampParameters) {
   const linkOffset = membraneThickness / 2 + MOUNTING.plateThickness * 1.5
   const springs = p.attachment === 'springs'
   // Lower springs need room beneath the flange and above the base board.
-  const lowerY = MOUNTING.shadeBottom + (springs ? MOUNTING.springShadeLift : 0)
+  const lowerY = MOUNTING.shadeBottom + deriveBase(p).lift + (springs ? MOUNTING.springShadeLift : 0)
   const upperY = lowerY + displayHeight
   const lowerLinkY = lowerY - linkOffset
   const upperLinkY = upperY + linkOffset

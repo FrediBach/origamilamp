@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import type { LampParameters } from '@/lib/lamp'
 import { deriveLighting, type PreviewLightSource } from '@/lib/lighting'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
+import { deriveBase } from '@/lib/base'
 import { luminousCenter, pendantIndex, sampleShadeGlow } from '@/lib/shade-transmission'
 
 type Lighting = ReturnType<typeof deriveLighting>
@@ -71,6 +72,7 @@ function Bulb({ source, inverted, lightOn, color }: { source: PreviewLightSource
 
 export function LampLightSources({ parameters, lighting, lightOn }: { parameters: LampParameters; lighting: Lighting; lightOn: boolean }) {
   const mounting = deriveMounting(parameters)
+  const base = deriveBase(parameters)
   const topSupportY = mounting.upperY + MOUNTING.plateThickness
   const pendant = pendantIndex(lighting.sources)
   return <group>
@@ -80,7 +82,7 @@ export function LampLightSources({ parameters, lighting, lightOn }: { parameters
     </mesh>}
     {lighting.sources.map((source, index) => <group key={`${source.kind}-${index}`}>
       {source.kind === 'led' ? <>
-        <Support bottom={48} top={source.centerY - source.height / 2} />
+        <Support bottom={base.topY} top={source.centerY - source.height / 2} />
         <mesh position={[0, source.centerY / 1000, 0]} castShadow>
           <cylinderGeometry args={[source.diameter / 2000, source.diameter / 2000, source.height / 1000, 32]} />
           <meshStandardMaterial color="#f5f2e9" emissive={lighting.color} emissiveIntensity={lightOn ? 1.65 : 0} roughness={0.55} />
@@ -89,7 +91,7 @@ export function LampLightSources({ parameters, lighting, lightOn }: { parameters
       </> : <>
         {index === pendant
           ? <Support bottom={source.centerY + source.height / 2} top={topSupportY} radius={0.0011} />
-          : <Support bottom={48} top={source.centerY - source.height / 2} />}
+          : <Support bottom={base.topY} top={source.centerY - source.height / 2} />}
         <Bulb source={source} inverted={index === pendant} color={lighting.color} lightOn={lightOn} />
       </>}
       {lightOn && <pointLight

@@ -63,7 +63,9 @@ The local shadcn-style UI components use Radix primitives and class-variance-aut
 6. Inspect both alternating connector-layer types in the slicer, print the specimen, and remove every PLA separator. Measure a comfortable deployed pitch per full pleat with the intended attachment arrangement, then enter that pitch to help plan the full shade.
 7. Export the full compressed design once the geometry checks permit it. Capture both terminal TPU membranes in separate two-piece perimeter clamps; connect each end to the frame through four bolted supports or four short metal extension springs. With bolted supports, fit the lower clamp first and secure the upper clamp at the calibrated deployment height. With springs, support the shade while fitting both sets, then balance opposing spring pairs at the calibrated height. The clamps, springs and other hardware are not included in the shade STL files.
 
-Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. Older version 1 designs receive the original LED source, default warmth and bolted attachment when those newer fields are absent. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. The selected attachment and matching setup instructions are included in the manufacturing ZIP. Local storage is a convenience, not a substitute for exporting a recipe.
+In **Finish → Wooden electronics box**, optionally add a wooden compartment beneath the lamp for electronics and wiring. Set its usable internal height from **20–120 mm** (default 40 mm); the preview raises the lamp above the compartment. The compartment uses 6 mm walls and a 6 mm lid above the existing wooden base. It is a space reservation: component fit, cable routing, ventilation and electrical design require separate verification. The wooden box is separate hardware and is excluded from the shade STLs.
+
+Design settings are saved in browser local storage under `origamilamp.design.v1`. Use **Save recipe** for a portable versioned JSON file and **Import recipe** to reopen it. Older version 1 designs receive the original LED source, default warmth, bolted attachment and disabled electronics box with a 40 mm internal height when those newer fields are absent. A malformed or out-of-range scalar value is rejected; editable geometric conflicts can be imported and are diagnosed before manufacture. The selected attachment, electronics box settings and matching setup instructions are included in the manufacturing ZIP. Local storage is a convenience, not a substitute for exporting a recipe.
 
 LED and bulb diameters are remembered separately and the selected diameter is used by the light and mounting clearance checks. Bulb placement and warmth affect the appearance preview only. The bulbs, sockets, stems, and hanging support are approximate hardware concepts, excluded from the shade STL files. The preview reports overlapping bulbs or insufficient vertical room without shrinking their selected diameter.
 
@@ -81,7 +83,7 @@ compressed body height = N × t + (N − 1) × s
 
 The default 24 full pleats give 48 membranes, 47 separators, and a **38.0 mm** compressed body at 0.2 mm layers with two layers of each material. The first layer must use the same height; variable layer heights are unsupported.
 
-Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and begins at Z = 0. The appearance scene uses metres and Y-up, with an explicit transform for the manufacturing view. Display height, preview expansion, object rotation, attachment choice, and visual material tone do not change the exported manufacturing geometry.
+Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and begins at Z = 0. The appearance scene uses metres and Y-up, with an explicit transform for the manufacturing view. Display height, preview expansion, object rotation, attachment choice, electronics box settings, and visual material tone do not change the exported manufacturing geometry.
 
 ## Architecture
 
@@ -94,6 +96,9 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/lib/manufacturing.ts` | Deterministic compressed TPU/PLA boundary meshes and normal-offset contours. |
 | `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
 | `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |
+| `src/lib/base.ts` | Wooden base compartment dimensions, internal space and assembly elevation. |
+| `src/components/base-controls.tsx` | Optional electronics compartment toggle, usable height and internal space readout. |
+| `src/components/lamp-base.tsx` | Wooden base, compartment walls, lid and cable opening in the appearance preview. |
 | `src/components/mounting-controls.tsx` | Top and bottom attachment selection and matching hardware guidance. |
 | `src/lib/lighting.ts` | Source dimensions, bulb placement, approximate colour temperature, and preview fit checks. |
 | `src/components/light-controls.tsx` | Light-source selection, independent bulb heights, warmth, and source clearance controls. |
