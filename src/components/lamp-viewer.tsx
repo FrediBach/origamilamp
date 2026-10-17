@@ -96,7 +96,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
-  // The brackets lap onto the top of the oak rails and bolt through them.
+  // Spring rails sit beyond both flanges to pull the bellows apart.
   const lowerRailY = mounting.lowerRailY / 1000
   const upperRailY = mounting.upperRailY / 1000
   const railHeight = MOUNTING.frameRailHeight / 1000
@@ -335,10 +335,13 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
   const { camera, invalidate } = useThree()
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
   const { displayHeight, compressedHeight } = deriveLamp(parameters)
+  const mounting = deriveMounting(parameters)
   const manufacturing = mode === 'print' || mode === 'materials' || mode === 'section'
   const brutalist = roomStyle === 'brutalist'
   const floorY = mode === 'room' ? ROOM_FLOOR_Y : STUDIO_FLOOR_Y
-  const height = manufacturing ? compressedHeight / 1000 : displayHeight / 1000 + 0.1
+  const height = manufacturing ? compressedHeight / 1000 : parameters.attachment === 'springs'
+    ? (mounting.upperRailY + MOUNTING.frameRailHeight / 2) / 1000
+    : displayHeight / 1000 + 0.1
   const footprint = Math.max(parameters.width, parameters.depth) / 1000
   // Leave a little floor margin around the full-length frame feet.
   const fit = Math.max(height * (manufacturing ? 1.95 : 2.05), footprint * 2.6, 0.22)
@@ -405,7 +408,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
     {/* The furnished room uses the lights' cast shadows. ContactShadows captures
         all visible geometry, including architecture, so reserve that extra
         grounding pass for isolated models to avoid phantom floor patches. */}
-    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}-${parameters.lightSource}-${parameters.lightDiameter}-${parameters.bulbDiameter}-${parameters.bulbHeight}-${parameters.secondBulbHeight}`} />}
+    {mode !== 'room' && <ContactShadows position={[0, floorY + 0.001, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}-${parameters.attachment}-${parameters.lightSource}-${parameters.lightDiameter}-${parameters.bulbDiameter}-${parameters.bulbHeight}-${parameters.secondBulbHeight}`} />}
     <OrbitControls ref={controls} makeDefault enableDamping={false} enablePan minDistance={0.12} maxDistance={4.5} minPolarAngle={0.15} maxPolarAngle={Math.PI / 2 - 0.015} target={[0, targetY, 0]} />
   </>
 }

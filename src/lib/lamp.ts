@@ -3,6 +3,7 @@ import { effectiveLightDiameter } from './lighting'
 
 export type Shape = 'rounded-rectangle' | 'circle' | 'polygon'
 export type LightSource = 'led' | 'bulb' | 'two-bulbs'
+export type Attachment = 'bolted' | 'springs'
 
 export interface LampParameters {
   shape: Shape
@@ -27,6 +28,7 @@ export interface LampParameters {
   bedHeight: number
   lightDiameter: number
   lightSource: LightSource
+  attachment: Attachment
   lightTemperature: number
   ceilingLightTemperature: number
   ceilingLightIntensity: number
@@ -53,7 +55,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
-  lightDiameter: 32, lightSource: 'led', lightTemperature: 2700,
+  lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightTemperature: 2700,
   ceilingLightTemperature: 4000, ceilingLightIntensity: 100,
   bulbDiameter: 60, bulbHeight: 35, secondBulbHeight: 70,
   lightClearance: 12, measuredPitch: 0,
@@ -95,7 +97,7 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   } else {
     add('layers', 'pass', 'Layer schedule aligned', `${d.sheets} membranes · ${d.separators} removable separators · ${d.compressedHeight.toFixed(1)} mm compressed. Use the same first-layer height.`)
   }
-  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance and light source.')
+  if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource) || !['bolted', 'springs'].includes(p.attachment)) add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance, light source and attachment.')
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
   if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; ceiling intensity: 0–200%; each bulb height: 0–100% of its available vertical travel.')
   const aperture = Math.min(p.width, effectiveDepth) - 2 * p.bandWidth
@@ -121,7 +123,9 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   if (mount.gripWidth < 4) add('mounting-grip', 'warning', 'Terminal bands need a wider grip', `Only ${mount.gripWidth.toFixed(1)} mm is available for the clamp. Increase membrane band width to leave at least 4 mm of grip and room for the outer fold exit. The printable shade is unchanged.`)
   if (!mount.activeLegs) add('mounting-height', 'warning', 'One pleat cannot use this mounting arrangement', 'The first and last membranes are held flat as gripping flanges, leaving no active folding span. The preview stays compressed; use at least two pleats for a mounted preview. A one-pleat calibration print remains available.')
   else if (d.displayHeight < mount.minimumMountedHeight) add('mounting-height', 'warning', 'Too little space between the end clamps', `The clamp arrangement needs at least ${mount.minimumMountedHeight.toFixed(1)} mm of displayed height. Expand the preview to inspect the separate mounting hardware.`)
-  add('mounting-load', 'warning', 'Attachment load needs a physical test', 'Rigid perimeter clamps capture the top and bottom terminal membranes and attach to an external frame. Grip, sustained tension and TPU deformation need testing with the chosen material; the hardware is separate from the shade export.')
+  add('mounting-load', 'warning', 'Attachment load needs a physical test', p.attachment === 'springs'
+    ? 'Four short metal extension springs at each end suspend the rigid perimeter clamps from the frame, like a trampoline. Test spring tension, travel, hook retention and TPU deformation at the calibrated height. The springs and clamps are separate hardware; spring rate and load capacity are not calculated.'
+    : 'Rigid perimeter clamps capture the top and bottom terminal membranes and attach to an external frame through four bolted supports per end. Grip, sustained tension and TPU deformation need testing with the chosen material; the hardware is separate from the shade export.')
   if (p.height < d.compressedHeight || p.height > d.estimatedMaxHeight) add('height', 'warning', 'Display height exceeds the preview envelope', 'The target is outside the approximate free-span envelope with two flat terminal flanges. Lower the target or add pleats; a physical sample determines achievable deployment.')
   if (p.shape === 'polygon' || p.twist !== 0 || p.modulation !== 0) add('experimental-profile', 'warning', 'Sculpted form is preview only', 'Polygon sides, twist and size modulation do not have validated shared connector contours. Reset these to export a constant-section shade.')
   if (p.measuredPitch > 0) {

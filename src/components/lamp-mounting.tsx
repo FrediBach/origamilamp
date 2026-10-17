@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import type { LampParameters } from '@/lib/lamp'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { previewContour } from '@/lib/preview-geometry'
+import { buildSpringGeometry, springAnchors } from '@/lib/spring-geometry'
 
 interface LampMountingProps {
   parameters: LampParameters
@@ -79,6 +80,25 @@ function Fastener({ point, bottom, top }: { point: THREE.Vector2; bottom: number
   </group>
 }
 
+function SpringEye({ center, stemEnd, direction }: { center: THREE.Vector3; stemEnd: THREE.Vector3; direction: THREE.Vector2 }) {
+  const stem = stemEnd.clone().sub(center)
+  const eyeRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-direction.y, 0, direction.x))
+  const radius = MOUNTING.springEyeRadius / 1000
+  // Start the shank at the eye's outer rim, leaving its centre open for a hook.
+  const stemStart = center.clone().addScaledVector(stem.clone().normalize(), radius)
+  const stemDirection = stemEnd.clone().sub(stemStart)
+  return <group>
+    <mesh position={center} quaternion={eyeRotation} castShadow receiveShadow>
+      <torusGeometry args={[radius, 0.0008, 8, 24]} />
+      <meshStandardMaterial color="#b5b8b8" metalness={0.82} roughness={0.3} />
+    </mesh>
+    <mesh position={stemStart.clone().add(stemEnd).multiplyScalar(0.5)} quaternion={new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), stemDirection.clone().normalize())} castShadow>
+      <cylinderGeometry args={[0.0012, 0.0012, stemDirection.length(), 10]} />
+      <meshStandardMaterial color="#a1a6a6" metalness={0.8} roughness={0.32} />
+    </mesh>
+  </group>
+}
+
 /** Separate assembly hardware, never included in the printable shade export.
  * Both terminal membranes are captured between two rigid perimeter jaws. The
  * bolts sit inside the aperture lip, so they do not puncture the TPU flange. */
@@ -109,11 +129,20 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
         const frameRadius = (direction.x ? frameWidth : frameDepth) / 2
         const frameScrew = direction.clone().multiplyScalar(frameRadius)
         const tangent = new THREE.Vector2(-direction.y, direction.x).multiplyScalar(MOUNTING.bracketWidth / 2000)
+        const spring = parameters.attachment === 'springs'
+          ? springAnchors(screw, direction, frameRadius, y, (upper ? mount.upperRailY : mount.lowerRailY) / 1000, upper, mount.springClampEyeOffset)
+          : null
         // The link laps over the clamp bolt and extends across the oak rail.
         const start = direction.clone().multiplyScalar(radius - 0.0027)
-        const end = direction.clone().multiplyScalar(frameRadius + MOUNTING.framePostWidth / 2000 - 0.001)
+        // For springs this is a short eye lug; wider modulated shades may need
+        // a longer lug to retain a short spring instead of stretching its wire.
+        const end = direction.clone().multiplyScalar(spring ? spring.clampPoint.length() + 0.0037 : frameRadius + MOUNTING.framePostWidth / 2000 - 0.001)
         const outline = [start.clone().add(tangent), end.clone().add(tangent), end.clone().sub(tangent), start.clone().sub(tangent)]
-        return { geometry: plateGeometry(outline, [], [screw, frameScrew]), screw, frameScrew }
+        return {
+          geometry: plateGeometry(outline, [], spring ? [screw] : [screw, frameScrew]),
+          spring: spring ? { ...spring, geometry: buildSpringGeometry(spring.start, spring.end) } : null,
+          direction, screw, frameScrew,
+        }
       })
       return { upper, jaw, y, linkY, links }
     })
@@ -122,12 +151,15 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
   useEffect(() => () => {
     for (const assembly of assemblies) {
       assembly.jaw.dispose()
-      for (const link of assembly.links) link.geometry.dispose()
+      for (const link of assembly.links) {
+        link.geometry.dispose()
+        link.spring?.geometry.dispose()
+      }
     }
   }, [assemblies])
 
   if (!mounting.canMount) return null
-  return <group name="top-and-bottom-tension-mounts">
+  return <group name={parameters.attachment === 'springs' ? 'top-and-bottom-spring-mounts' : 'top-and-bottom-tension-mounts'}>
     {assemblies.map(assembly => <group key={assembly.upper ? 'top' : 'bottom'}>
       {[-1, 1].map(sign => <mesh key={sign} geometry={assembly.jaw} position={[0, assembly.y + sign * (membrane / 2 + PLATE / 2), 0]} castShadow receiveShadow>
         <meshStandardMaterial color="#625f50" metalness={0.5} roughness={0.48} />
@@ -141,7 +173,13 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
           bottom={assembly.y - membrane / 2 - PLATE - (assembly.upper ? 0 : PLATE)}
           top={assembly.y + membrane / 2 + PLATE + (assembly.upper ? PLATE : 0)}
         />
-        <Fastener point={link.frameScrew} bottom={assembly.linkY - PLATE / 2 - MOUNTING.frameRailHeight / 1000} top={assembly.linkY + PLATE / 2} />
+        {link.spring ? <>
+          <SpringEye center={link.spring.start} stemEnd={new THREE.Vector3(link.spring.clampPoint.x, assembly.linkY, link.spring.clampPoint.y)} direction={link.direction} />
+          <SpringEye center={link.spring.end} stemEnd={new THREE.Vector3(link.frameScrew.x, link.spring.end.y, link.frameScrew.y)} direction={link.direction} />
+          <mesh geometry={link.spring.geometry} castShadow receiveShadow>
+            <meshStandardMaterial color="#c1c5c8" metalness={0.86} roughness={0.25} />
+          </mesh>
+        </> : <Fastener point={link.frameScrew} bottom={assembly.linkY - PLATE / 2 - MOUNTING.frameRailHeight / 1000} top={assembly.linkY + PLATE / 2} />}
       </group>)}
     </group>)}
   </group>

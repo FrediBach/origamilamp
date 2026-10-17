@@ -63,6 +63,14 @@ describe('bellows parameters and diagnostics', () => {
     expect(validateLamp({ ...DEFAULT_PARAMETERS, lightDiameter: 150 })).toContainEqual(expect.objectContaining({ id: 'light-clearance', status: 'error' }))
     expect(validateLamp({ ...DEFAULT_PARAMETERS, height: 1500 })).toContainEqual(expect.objectContaining({ id: 'height', status: 'warning' }))
   })
+  it('describes spring calibration without changing shade manufacture eligibility', () => {
+    const p = { ...DEFAULT_PARAMETERS, attachment: 'springs' as const }
+    expect(manufacturingErrors(p)).toEqual([])
+    expect(validateLamp(p)).toContainEqual(expect.objectContaining({
+      id: 'mounting-load', status: 'warning', detail: expect.stringContaining('Four short metal extension springs at each end'),
+    }))
+    expect(deriveLamp(p)).toEqual(deriveLamp(DEFAULT_PARAMETERS))
+  })
   it.each([
     { bandWidth: 95 }, { bandWidth: 3 }, { cornerRadius: 12 }, { cornerRadius: 90 },
     { pleats: 4.5 }, { tpuLayers: 1.5 }, { separatorLayers: 0 }, { layerHeight: 0.01 },
@@ -182,6 +190,40 @@ describe('registered exports and design files', () => {
     expect(() => parseDesign('{')).toThrow(/JSON/)
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, width: '180' } }))).toThrow(/width/)
     expect(() => parseDesign(JSON.stringify({ schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, expansion: 200 } }))).toThrow(/range/)
+  })
+  it.each(['bolted', 'springs'] as const)('round trips the %s attachment and hardware recipe', attachment => {
+    const p = { ...DEFAULT_PARAMETERS, attachment }
+    const serialized = serializeDesign(p)
+    expect(parseDesign(serialized)).toEqual(p)
+    const { mounting } = JSON.parse(serialized).recipe
+    expect(mounting.attachment).toBe(attachment)
+    expect(mounting.frameConnection).toBe(attachment === 'springs' ? 'short-metal-extension-springs' : 'rigid-bolted-links')
+    expect(mounting.frameConnectionsPerEnd).toBe(4)
+    expect(mounting.hardwareIncludedInSTLs).toBe(false)
+    if (attachment === 'springs') expect(mounting.springs).toEqual(expect.objectContaining({ count: 8, selection: expect.stringContaining('physical calibration') }))
+    else expect(mounting.springs).toBeUndefined()
+  })
+  it('migrates version 1 designs without attachment to the original bolted supports', () => {
+    const document = JSON.parse(serializeDesign(DEFAULT_PARAMETERS))
+    delete document.parameters.attachment
+    expect(parseDesign(JSON.stringify(document))).toEqual(DEFAULT_PARAMETERS)
+  })
+  it.each([null, 1, true, '', 'elastic-cord', {}, []])('rejects an explicit unsupported attachment: %j', attachment => {
+    const document = { schemaVersion: 1, parameters: { ...DEFAULT_PARAMETERS, attachment } }
+    expect(() => parseDesign(JSON.stringify(document))).toThrow(/attachment|Unsupported design value/)
+  })
+  it.each([false, true])('exports spring instructions with identical STL geometry (calibration: %s)', calibration => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4 }
+    const bolted = unzipSync(createManufacturingArchive(p, { calibration }))
+    const springs = unzipSync(createManufacturingArchive({ ...p, attachment: 'springs' }, { calibration }))
+    expect(springs['shade-tpu.stl']).toEqual(bolted['shade-tpu.stl'])
+    expect(springs['separators-pla.stl']).toEqual(bolted['separators-pla.stl'])
+    expect(parseDesign(strFromU8(springs['design.json'])).attachment).toBe('springs')
+    const instructions = strFromU8(springs['READ-ME.txt'])
+    expect(instructions).toContain('Four short metal extension springs per end (eight total)')
+    expect(instructions).toContain('Balance opposing spring pairs at both the top and bottom')
+    expect(instructions).toContain('NOT included in these STL files')
+    expect(instructions).not.toContain('Four bolted supports per end')
   })
   it('retains editable geometric conflicts but never exports them', () => {
     const invalid = { ...DEFAULT_PARAMETERS, bandWidth: 60 }

@@ -75,4 +75,18 @@ describe('terminal flange mounting', () => {
     }
     expect(deriveMounting(singlePleat).displayHeight).toBeCloseTo(1.2, 8)
   })
+
+  it('places spring rails beyond both ends to pull the shade apart and clear the base', () => {
+    const p = { ...DEFAULT_PARAMETERS, attachment: 'springs' as const }
+    const spring = deriveMounting(p)
+    const bolted = deriveMounting(DEFAULT_PARAMETERS)
+    expect(spring.lowerY).toBe(bolted.lowerY + MOUNTING.springShadeLift)
+    expect(spring.displayHeight).toBe(bolted.displayHeight)
+    expect(spring.gripWidth).toBe(bolted.gripWidth)
+    expect(spring.minimumOpening).toBe(bolted.minimumOpening)
+    expect(spring.lowerY - spring.lowerRailY).toBe(MOUNTING.springRailOffset)
+    expect(spring.upperRailY - spring.upperY).toBe(MOUNTING.springRailOffset)
+    expect(spring.lowerRailY - MOUNTING.frameRailHeight / 2).toBeGreaterThan(48)
+    expect(spring.canMount).toBe(true)
+  })
 })

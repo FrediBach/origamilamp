@@ -5,7 +5,7 @@ import { buildManufacturingGeometry, type ManufacturingOptions } from './manufac
 import { deriveMounting, MOUNTING } from './mounting'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_LIGHTING_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightTemperature', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -47,7 +47,16 @@ export function serializeDesign(parameters: LampParameters): string {
         gripWidthMillimetres: mounting.gripWidth,
         apertureIntrusionMillimetres: MOUNTING.apertureIntrusion,
         clampPlateThicknessMillimetres: MOUNTING.plateThickness,
+        attachment: parameters.attachment,
+        frameConnection: parameters.attachment === 'springs' ? 'short-metal-extension-springs' : 'rigid-bolted-links',
         frameConnectionsPerEnd: 4,
+        ...(parameters.attachment === 'springs' ? {
+          springs: {
+            count: 8,
+            arrangement: 'four-per-end-between-terminal-clamp-and-frame',
+            selection: 'Choose spring rate, initial tension, working travel and retained hooks through physical calibration; preview dimensions are illustrative.',
+          },
+        } : {}),
         hardwareIncludedInSTLs: false,
       },
       bridgeDirectionStartingPointDegrees: 45,
@@ -68,10 +77,10 @@ export function parseDesign(text: string): LampParameters {
   if (!source || typeof source !== 'object') throw new Error('The design file is missing its parameter object.')
   const result: Record<string, unknown> = {}
   for (const [key, defaultValue] of Object.entries(DEFAULT_PARAMETERS)) {
-    // Lighting controls were added to version 1. Only absent new fields receive
+    // Lighting and attachment controls were added to version 1. Only absent fields receive
     // defaults; explicit nulls, wrong types and unsupported values stay errors.
     const value = Object.hasOwn(source, key) ? (source as Record<string, unknown>)[key]
-      : OPTIONAL_LIGHTING_SETTINGS.has(key) ? defaultValue : undefined
+      : OPTIONAL_V1_SETTINGS.has(key) ? defaultValue : undefined
     if (typeof value !== typeof defaultValue || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`Missing or invalid setting: ${key}.`)
     result[key] = value
   }
@@ -117,6 +126,22 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const d = deriveLamp(p)
   const endMounting = endMountingEligibility(p)
   const incompatibleMount = endMounting.limitations.length > 0
+  const frameInstructions = p.attachment === 'springs'
+    ? `Four short metal extension springs per end (eight total) connect the clamps
+   to the frame, suspending the shade like a trampoline. Fit retained hooks to
+   the clamp and frame anchors; do not hook springs through the thin TPU.
+   Balance opposing spring pairs at both the top and bottom. Select spring rate,
+   initial tension and working travel with a physical specimen; confirm the
+   hooks remain retained throughout the intended movement. The preview does not
+   calculate spring force or predict dynamic motion.`
+    : `Four bolted supports per end connect the clamp to the oak frame.`
+  const deploymentInstructions = p.attachment === 'springs'
+    ? `Remove PLA before fitting clamps. Support the shade while attaching the
+   lower and upper spring sets, then balance their tension at a measured
+   comfortable height. Do not force the target height or exceed the selected
+   springs' working travel.`
+    : `Remove PLA before fitting clamps. Secure the bottom first; deploy to a measured
+   comfortable height, then secure the upper clamp. Do not force the target height.`
   const calibrationInstructions = incompatibleMount
     ? `6. Use this specimen for separator-release and connector-bonding checks only.
    The mounting limitations below prevent deployment calibration with the shown
@@ -133,10 +158,9 @@ ${endMounting.limitations.map(limitation => `   ${limitation.detail}`).join('\n'
     : `7. Hold BOTH ends under tension. The appearance model reserves the first and last
    TPU membranes as flat gripping flanges. At each end, two separate rigid clamp
    rings sandwich the inner portion of that flange; leave the outer joining band
-   free to bend. Four bolted supports per end connect the clamp to the oak frame.
+   free to bend. ${frameInstructions}
    Clamp screws sit inside the free aperture, not through the thin TPU.
-   Remove PLA before fitting clamps. Secure the bottom first; deploy to a measured
-   comfortable height, then secure the upper clamp. Do not force the target height.`
+   ${deploymentInstructions}`
   const instructions = `ORIGAMI LAMP · ${options.calibration ? 'CALIBRATION SPECIMEN' : 'COMPRESSED SHADE'}
 origamilamp.app | millimetres | geometry recipe v1
 
@@ -160,7 +184,7 @@ origamilamp.app | millimetres | geometry recipe v1
    from outside. Check for accidental TPU welds and damaged connectors.
 ${calibrationInstructions}
 ${mountingInstructions}
-   The shown rings, brackets, fasteners and frame are a mounting CONCEPT and are
+   The shown rings, ${p.attachment === 'springs' ? 'springs, anchors' : 'brackets'}, fasteners and frame are a mounting CONCEPT and are
    NOT included in these STL files. Grip, tension and creep require physical tests;
    there is no calculated clamp force, fastener torque or load rating.
 8. Use the light source manufacturer's clearances, temperature and ventilation
@@ -173,7 +197,8 @@ ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removabl
 ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeight.toFixed(3)} mm compressed
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
-Display height, expansion, rotation, light placement, warmth and ceiling intensity do not alter these print files.
+Attachment: ${p.attachment === 'springs' ? 'short metal springs, four at the top and four at the bottom' : 'bolted supports, four per end'} (separate hardware).
+Display height, expansion, rotation, attachment, light placement, warmth and ceiling intensity do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {

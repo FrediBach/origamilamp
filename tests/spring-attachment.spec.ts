@@ -1,0 +1,48 @@
+import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+
+test('spring suspension switches live, survives reload and recipe import, and resets', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Finish', exact: true }).click()
+  await page.getByText('Top and bottom mounting', { exact: true }).click()
+  const springs = page.getByRole('button', { name: 'Metal springs', exact: true })
+  const bolted = page.getByRole('button', { name: 'Bolted supports', exact: true })
+  await expect(bolted).toHaveAttribute('aria-pressed', 'true')
+  await springs.focus()
+  await springs.press('Enter')
+  await expect(springs).toHaveAttribute('aria-pressed', 'true')
+  await expect(bolted).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.mounting-description')).toContainText('like a trampoline')
+  await expect(page.locator('.mounting-dimensions')).toContainText('4 top + 4 bottom')
+  await expect(page.locator('.mounting-preview-label')).toHaveText('Top + bottom springs · suspension concept')
+  const accessibility = await new AxeBuilder({ page }).include('.mounting-details').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
+  expect(accessibility.violations).toEqual([])
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
+  await page.screenshot({ path: 'test-results/spring-attachment-desktop.png', fullPage: true })
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save design', exact: true }).click()
+  const download = await downloadPromise
+  const recipePath = await download.path()
+  expect(recipePath).toBeTruthy()
+  await page.reload()
+  await page.getByRole('tab', { name: 'Finish', exact: true }).click()
+  await page.getByText('Top and bottom mounting', { exact: true }).click()
+  await expect(springs).toHaveAttribute('aria-pressed', 'true')
+  await bolted.click()
+  await expect(page.locator('.mounting-preview-label')).toHaveText('Top + bottom clamps · mounting concept')
+  await page.getByLabel('Import a saved design recipe').setInputFiles(recipePath!)
+  await expect(springs).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.mounting-preview-label')).toHaveText('Top + bottom springs · suspension concept')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await springs.scrollIntoViewIfNeeded()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/spring-attachment-mobile.png', fullPage: true })
+  await page.getByRole('button', { name: 'Reset all design settings', exact: true }).click()
+  await expect(bolted).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.mounting-preview-label')).toHaveText('Top + bottom clamps · mounting concept')
+  expect(errors).toEqual([])
+})

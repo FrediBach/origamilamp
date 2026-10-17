@@ -201,6 +201,12 @@ button svg { pointer-events: none; }
 .recipe-label > span:last-child { margin-left: auto; font-family: var(--mono); font-size: 10px; color: #626952; }
 .inspect-layers-button { margin-top: 15px; font-size: 11px; }
 .mounting-details { margin-top: 18px; }
+.attachment-picker { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+.attachment-picker legend { padding: 0; margin-bottom: 11px; }
+.attachment-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.attachment-option { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 74px; padding: 10px 4px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; font-size: 11px; }
+.attachment-option.selected { background: #f4ede5; border-color: #bf7460; color: #a54330; }
+.attachment-option:hover { border-color: #b16a55; }
 .mounting-description { font-size: 12px; line-height: 1.7; color: #59624e; margin: 0 0 14px; }
 .mounting-dimensions { display: grid; gap: 9px; margin: 0 0 15px; font-size: 11px; }
 .mounting-dimensions > div { display: flex; justify-content: space-between; gap: 12px; }
