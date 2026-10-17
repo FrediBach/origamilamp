@@ -5,7 +5,7 @@ test('studio renders, edits live, persists, inspects layers and exports a calibr
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Light, in your own form.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your lamp', exact: true })).toBeVisible()
   await expect(page.locator('canvas')).toBeVisible()
   await page.screenshot({ path: 'test-results/studio-desktop.png', fullPage: true })
   await page.getByRole('spinbutton', { name: 'Width (millimetres)', exact: true }).fill('190')
@@ -34,6 +34,13 @@ test('studio renders, edits live, persists, inspects layers and exports a calibr
 
 test('keyboard controls, experimental export guard and accessibility', async ({ page }) => {
   await page.goto('/')
+  const help = page.getByRole('button', { name: 'Help: the process', exact: true })
+  await help.focus()
+  await help.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'A flat print. A softer space.' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(help).toBeFocused()
   const width = page.getByRole('spinbutton', { name: 'Width (millimetres)', exact: true })
   await width.fill('999')
   await width.press('Escape')

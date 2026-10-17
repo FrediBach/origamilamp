@@ -48,12 +48,6 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   rotation: 0, material: 'ivory',
 }
 
-export const PRESETS: { id: string; name: string; subtitle: string; parameters: Partial<LampParameters> }[] = [
-  { id: 'akari', name: 'Akari', subtitle: 'A quiet, rounded square', parameters: { ...DEFAULT_PARAMETERS } },
-  { id: 'andon', name: 'Andon', subtitle: 'Slender and architectural', parameters: { ...DEFAULT_PARAMETERS, width: 150, depth: 150, height: 620, pleats: 32, bandWidth: 20, cornerRadius: 28, material: 'natural' } },
-  { id: 'maru', name: 'Maru', subtitle: 'Soft light, circular form', parameters: { ...DEFAULT_PARAMETERS, shape: 'circle', width: 200, depth: 200, height: 380, pleats: 20, bandWidth: 25, material: 'white' } },
-]
-
 /** Nominal manufacturing arithmetic. Expansion and target height never change print geometry. */
 export function deriveLamp(p: LampParameters) {
   const sheets = 2 * p.pleats
