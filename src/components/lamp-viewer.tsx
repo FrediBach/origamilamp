@@ -22,6 +22,10 @@ type Vector3Tuple = [number, number, number]
 type TextureKind = 'wood' | 'tatami' | 'paper' | 'plaster'
 type KeyboardCommand = { action: 'left' | 'right' | 'in' | 'out' | 'home' | null; sequence: number }
 
+// Furniture and contact shadows share the visible floor surface, not Y=0.
+const ROOM_FLOOR_Y = -0.01
+const STUDIO_FLOOR_Y = -0.004
+
 // Deterministic textures keep the entire scene available offline.
 function surfaceTexture(kind: TextureKind) {
   const size = 128
@@ -77,7 +81,7 @@ function Box({ position, size, color, map, rotation, castShadow = true }: {
   </mesh>
 }
 
-function Lamp({ parameters, lightOn }: Pick<LampViewerProps, 'parameters' | 'lightOn'>) {
+function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters' | 'lightOn'> & { floorY: number }) {
   const geometry = useMemo(() => buildExpandedGeometry(parameters), [parameters])
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useSurfaceTexture('wood')
@@ -98,7 +102,7 @@ function Lamp({ parameters, lightOn }: Pick<LampViewerProps, 'parameters' | 'lig
   const lowerRailY = mounting.lowerRailY / 1000
   const upperRailY = mounting.upperRailY / 1000
   const railHeight = MOUNTING.frameRailHeight / 1000
-  const postBottom = 0.015
+  const postBottom = floorY
   const postTop = upperRailY + railHeight / 2
   const colors = { ivory: '#e8dfcb', natural: '#d7c7a6', white: '#f5f1e6' }
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
@@ -199,7 +203,8 @@ function GardenFoliage() {
 function Garden() {
   return <group>
     <Box position={[-0.7, 0.55, -2]} size={[3, 2.4, 0.08]} color="#c3c9b3" castShadow={false} />
-    <Box position={[-0.7, -0.01, -1.4]} size={[2.8, 0.025, 1.9]} color="#9c9d82" castShadow={false} />
+    {/* Keep the garden ground behind the threshold, outside the tatami room. */}
+    <Box position={[-0.7, -0.01, -1.675]} size={[2.8, 0.025, 1.35]} color="#9c9d82" castShadow={false} />
     <Branch from={[-0.8, 0, -1.5]} to={[-0.68, 0.62, -1.5]} radius={0.025} color="#6b6653" />
     <Branch from={[-0.75, 0.29, -1.5]} to={[-1.19, 0.56, -1.48]} radius={0.014} color="#6b6653" />
     <Branch from={[-0.72, 0.39, -1.5]} to={[-0.22, 0.62, -1.6]} radius={0.012} color="#6b6653" />
@@ -234,7 +239,7 @@ function JapaneseRoom() {
   const tatami = useSurfaceTexture('tatami')
   const plaster = useSurfaceTexture('plaster')
   return <group>
-    <Box position={[0, -0.035, 0]} size={[6, 0.05, 5]} color="#c6c0a7" map={tatami} />
+    <Box position={[0, ROOM_FLOOR_Y - 0.025, 0]} size={[6, 0.05, 5]} color="#c6c0a7" map={tatami} />
     {[-2.1, -1.15, -0.2, 0.75, 1.7].map(x => <Box key={x} position={[x, -0.008, 0]} size={[0.019, 0.005, 4.8]} color="#7c8170" castShadow={false} />)}
     {[-1.5, 0.4, 2.3].map(z => <Box key={z} position={[0, -0.007, z]} size={[5, 0.006, 0.016]} color="#808470" castShadow={false} />)}
     <Box position={[1.73, 1.05, -0.95]} size={[1.4, 2.1, 0.09]} color="#d4cdbb" map={plaster} />
@@ -247,7 +252,7 @@ function JapaneseRoom() {
     <Garden />
     <Box position={[-1.15, 0.08, -0.9]} size={[1.45, 0.04, 0.32]} color="#a58d6e" map={wood} />
     {/* A low, quiet arrangement leaves the walking area around the lamp open. */}
-    <group position={[-0.65, 0, -0.43]}>
+    <group position={[-0.65, ROOM_FLOOR_Y, -0.43]}>
       <Box position={[0, 0.19, 0]} size={[0.69, 0.035, 0.29]} color="#9c7b54" map={wood} />
       {[-0.25, 0.25].map(x => <Box key={x} position={[x, 0.09, 0]} size={[0.035, 0.18, 0.24]} color="#96774f" map={wood} />)}
       <group position={[-0.15, 0.208, 0]}><Vase /></group>
@@ -331,9 +336,11 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
   const { displayHeight, compressedHeight } = deriveLamp(parameters)
   const manufacturing = mode === 'print' || mode === 'materials' || mode === 'section'
+  const floorY = mode === 'room' ? ROOM_FLOOR_Y : STUDIO_FLOOR_Y
   const height = manufacturing ? compressedHeight / 1000 : displayHeight / 1000 + 0.1
   const footprint = Math.max(parameters.width, parameters.depth) / 1000
-  const fit = Math.max(height * 1.95, footprint * 2.6, 0.22)
+  // Leave a little floor margin around the full-length frame feet.
+  const fit = Math.max(height * (manufacturing ? 1.95 : 2.05), footprint * 2.6, 0.22)
   const targetY = manufacturing ? height / 2 : height * 0.48
 
   const resetCamera = useCallback(() => {
@@ -373,14 +380,16 @@ function Scene({ parameters, mode, lightOn, resetKey, keyboard, onReady }: LampV
     <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
     <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
     {mode === 'room' ? <JapaneseRoom /> : <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.004, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[20, 20]} />
         <meshStandardMaterial color="#e6e4dc" roughness={1} />
       </mesh>
       {manufacturing && <gridHelper args={[0.6, 30, '#bcbab1', '#d4d2c9']} position={[0, -0.002, 0]} />}
     </>}
-    {manufacturing ? <ManufacturingModel parameters={parameters} mode={mode} /> : <Lamp parameters={parameters} lightOn={lightOn} />}
-    <ContactShadows position={[0, -0.003, 0]} opacity={0.48} scale={1.5} blur={2.1} far={0.85} resolution={512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}`} />
+    {manufacturing ? <ManufacturingModel parameters={parameters} mode={mode} /> : <Lamp parameters={parameters} lightOn={lightOn} floorY={floorY} />}
+    {/* Cover the entire bench as well as the lamp, with room for the blur.
+        Keep the room patch inside the threshold and just above the tatami. */}
+    <ContactShadows position={mode === 'room' ? [-0.35, floorY + 0.001, 0.05] : [0, floorY + 0.001, 0]} opacity={0.48} scale={mode === 'room' ? [2.4, 1.7] : 1.5} blur={mode === 'room' ? 1.5 : 2.1} far={0.85} resolution={mode === 'room' ? 1024 : 512} frames={1} key={`${mode}-${parameters.width}-${parameters.depth}-${parameters.height}-${parameters.expansion}-${parameters.twist}-${parameters.modulation}-${parameters.rotation}`} />
     <OrbitControls ref={controls} makeDefault enableDamping={false} enablePan minDistance={0.12} maxDistance={4.5} minPolarAngle={0.15} maxPolarAngle={Math.PI / 2 - 0.015} target={[0, targetY, 0]} />
   </>
 }
