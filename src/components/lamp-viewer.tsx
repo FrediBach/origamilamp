@@ -4,7 +4,7 @@ import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
-import { buildExpandedGeometry } from '@/lib/preview-geometry'
+import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
 import { applyShadeTransmission } from '@/lib/shade-material'
@@ -86,21 +86,13 @@ function Box({ position, size, color, map, rotation, castShadow = true }: {
 
 function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters' | 'lightOn'> & { floorY: number }) {
   const geometry = useMemo(() => buildExpandedGeometry(parameters), [parameters])
+  const { width: w, depth: d } = useMemo(() => previewFrameDimensions(geometry), [geometry])
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useSurfaceTexture('wood')
   const paper = useSurfaceTexture('paper')
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
-  const depth = parameters.shape === 'circle' ? parameters.width : parameters.depth
-  const bounds = Array.from({ length: 17 }, (_, i) => {
-    const fraction = i / 16
-    const angle = THREE.MathUtils.degToRad(parameters.twist) * fraction
-    const modulation = 1 + parameters.modulation / 100 * Math.sin(fraction * Math.PI * 2)
-    return [(Math.abs(Math.cos(angle)) * parameters.width + Math.abs(Math.sin(angle)) * depth) * modulation, (Math.abs(Math.sin(angle)) * parameters.width + Math.abs(Math.cos(angle)) * depth) * modulation]
-  })
-  const w = Math.max(...bounds.map(value => value[0])) / 1000 + 0.035
-  const d = Math.max(...bounds.map(value => value[1])) / 1000 + 0.035
   // The brackets lap onto the top of the oak rails and bolt through them.
   const lowerRailY = mounting.lowerRailY / 1000
   const upperRailY = mounting.upperRailY / 1000

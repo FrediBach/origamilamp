@@ -3,6 +3,18 @@ import { deriveLamp, type LampParameters } from './lamp'
 
 const SEGMENTS = 96
 
+/** Rail centre-line spacing in metres, fitted to the rendered shade. */
+export function previewFrameDimensions(geometry: THREE.BufferGeometry) {
+  if (!geometry.boundingBox) geometry.computeBoundingBox()
+  const { min, max } = geometry.boundingBox!
+  // Keep the frame centred on the lamp, including asymmetric polygon profiles.
+  // The 35 mm allowance leaves 11.5 mm per side inside the 12 mm oak rails.
+  return {
+    width: 2 * Math.max(Math.abs(min.x), Math.abs(max.x)) + 0.035,
+    depth: 2 * Math.max(Math.abs(min.z), Math.abs(max.z)) + 0.035,
+  }
+}
+
 /** A visual approximation only. The manufacturing solids are generated separately. */
 export function buildExpandedGeometry(parameters: LampParameters) {
   const derived = deriveLamp(parameters)
