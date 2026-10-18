@@ -16,14 +16,14 @@ type MaterialPatch = {
  * geometry shadow maps continue to block that light at opaque objects. */
 export function PatternLightProjection({ parameters, geometry }: { parameters: LampParameters; geometry: THREE.BufferGeometry }) {
   const { scene, invalidate } = useThree()
-  const key = patternLightingKey(parameters)
+  const key = patternLightingKey(parameters, false)
   const [settled, setSettled] = useState(() => ({ key, maps: buildPatternLightMaps(parameters, geometry) }))
   const maps = settled.maps
   useEffect(() => {
     if (settled.key === key) return
-    // Let a slider or text edit finish before tracing the extended emitter.
-    // The shade's vector projection updates immediately; the last complete
-    // optical map and its source coordinates remain paired while dragging.
+    // Let geometry edits finish before tracing the extended emitter. Letter
+    // edits update native shadows immediately without rebuilding these maps;
+    // each optical map stays paired with its source coordinates while dragging.
     const timer = window.setTimeout(() => {
       setSettled({ key, maps: buildPatternLightMaps(parameters, geometry) })
     }, 150)

@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { strFromU8, unzipSync } from 'fflate'
+import { PerspectiveCamera, Vector3 } from 'three'
 
 const projectionControls = [
   ['Letter height (millimetres)', '150'],
@@ -256,8 +257,37 @@ test('curved bold type remains visible when the preview is magnified', async ({ 
   expect(errors).toEqual([])
 })
 
-async function roomTransmissionDifference(page: Page, frames: Buffer[]) {
-  return page.evaluate(async encoded => {
+// Independently project a few interior glyph points onto the actual floor.
+// This fixture uses the flat front of the default soft-square shade. The points
+// avoid outline edges, and the O counter occupies the same place as H's bar.
+// A uniform dimming field cannot satisfy the counter/bar comparison.
+function floorShadowProbes(width: number, height: number) {
+  const camera = new PerspectiveCamera(35, width / height, 0.01, 30)
+  const fit = 0.58 * 2.05 * 1.1 ** 2, targetY = 0.58 * 0.48, theta = 0.46 - 12 * 0.15
+  camera.position.set(Math.sin(theta) * fit, targetY + fit * 0.25, Math.cos(theta) * fit)
+  camera.lookAt(0, targetY, 0)
+  camera.updateMatrixWorld()
+  const rise = 480 / 46, span = 22 - 1.2 - 1.2
+  const depth = Math.sqrt(span * span - rise * rise)
+  const verticalCenter = 480 * 0.35
+  const sourceY = (306 + (480 - 2 * 3.2 - 33) * 0.25 + 33 * 0.19) / 1000
+  return [
+    { name: 'counter', xs: [-8, 0, 8] },
+    { name: 'left stroke', xs: [-38, -34] },
+    { name: 'right stroke', xs: [34, 38] },
+  ].map(region => ({ name: region.name, points: region.xs.flatMap(x => [2, 5, 8].map(y => {
+    const z = verticalCenter + y, leg = Math.floor(z / rise), fraction = z / rise - leg
+    const inset = 1.2 + (leg % 2 === 0 ? fraction : 1 - fraction) * depth
+    const point = new Vector3(x / 1000, (66 + z) / 1000, (90 - inset) / 1000)
+    const scale = (-0.01 - sourceY) / (point.y - sourceY)
+    point.set(point.x * scale, -0.01, point.z * scale)
+    point.project(camera)
+    return { x: (point.x + 1) * width / 2, y: (1 - point.y) * height / 2 }
+  })) }))
+}
+
+async function shadowShapeDifference(page: Page, frames: Buffer[], probes: ReturnType<typeof floorShadowProbes>) {
+  return page.evaluate(async ({ encoded, probes }) => {
     const contexts = await Promise.all(encoded.map(async frame => {
       const bytes = Uint8Array.from(atob(frame), character => character.charCodeAt(0))
       const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
@@ -267,78 +297,63 @@ async function roomTransmissionDifference(page: Page, frames: Buffer[]) {
       image.close()
       return context
     }))
-    // Receiver patches exclude the shade. Subtract light-off frames so a
-    // dark painted surface alone cannot satisfy the cast-shadow test.
-    return [{ name: 'left floor', x: 0.25, y: 0.8, width: 0.12, height: 0.12 }, { name: 'right floor', x: 0.61, y: 0.7, width: 0.2, height: 0.2 }].map(bounds => {
-      const pixels = contexts.map(context => context.getImageData(Math.round(context.canvas.width * bounds.x), Math.round(context.canvas.height * bounds.y), Math.round(context.canvas.width * bounds.width), Math.round(context.canvas.height * bounds.height)).data)
-      let difference = 0
-      let absolute = 0
-      let changed = 0
-      const contrasts: number[] = []
-      for (let index = 0; index < pixels[0].length; index += 4) {
-        const luminance = pixels.map(pixel => pixel[index] * 0.2126 + pixel[index + 1] * 0.7152 + pixel[index + 2] * 0.0722)
-        const blocked = (luminance[0] - luminance[1]) - (luminance[2] - luminance[3])
-        difference += blocked
-        absolute += Math.abs(blocked)
-        contrasts.push(blocked)
-        if (blocked > 5) changed++
-      }
-      const count = pixels[0].length / 4
-      contrasts.sort((a, b) => a - b)
-      return { name: bounds.name, blockedLight: difference / count, meanDifference: absolute / count, strongShadowFraction: changed / count, percentile95: contrasts[Math.floor(count * 0.95)] }
+    return probes.map(region => {
+      const samples = region.points.map(point => {
+        const values = contexts.map(context => {
+          const pixel = context.getImageData(Math.round(point.x) - 1, Math.round(point.y) - 1, 3, 3).data
+          let luminance = 0
+          for (let index = 0; index < pixel.length; index += 4) luminance += pixel[index] * 0.2126 + pixel[index + 1] * 0.7152 + pixel[index + 2] * 0.0722
+          return luminance / 9
+        })
+        return { ...point, o: values[0] - values[1], h: values[0] - values[2] }
+      })
+      const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]
+      return { name: region.name, o: median(samples.map(sample => sample.o)), h: median(samples.map(sample => sample.h)), samples }
     })
-  }, frames.map(frame => frame.toString('base64')))
+  }, { encoded: frames.map(frame => frame.toString('base64')), probes })
 }
 
-test('opaque lettering casts visibly contrasted shadows onto the room', async ({ page }, testInfo) => {
-  test.setTimeout(180_000)
+test('bulb letter shadows retain the O counter and change shape when replaced by H', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   await page.goto('/')
   await page.getByRole('tab', { name: 'Finish', exact: true }).click()
   const enabled = page.getByRole('switch', { name: 'Multicolor text', exact: true })
-  await enabled.setChecked(true)
-  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('SUN')
-  await setControl(page.getByRole('spinbutton', { name: 'Letter height (millimetres)', exact: true }), '200')
-  await setControl(page.getByRole('spinbutton', { name: 'Vertical placement (percent)', exact: true }), '35')
-  const light = page.getByRole('switch', { name: 'Light', exact: true })
+  const text = page.getByRole('textbox', { name: 'Text', exact: true })
   const canvas = page.locator('canvas')
-  const ledBlackOn = await settledFrame(canvas)
-  await writeFile(testInfo.outputPath('multicolor-default-led-room-light.png'), ledBlackOn)
-  await light.setChecked(false)
-  const ledBlackOff = await settledFrame(canvas)
-  await enabled.setChecked(false)
-  const ledPlainOff = await settledFrame(canvas)
-  await light.setChecked(true)
-  const ledPlainOn = await settledFrame(canvas)
-  await writeFile(testInfo.outputPath('multicolor-default-led-plain-room-light.png'), ledPlainOn)
-  const defaultLed = await roomTransmissionDifference(page, [ledPlainOn, ledPlainOff, ledBlackOn, ledBlackOff])
+  const preview = page.getByRole('region', { name: /^Approximate expanded lamp 3D preview/ })
   await enabled.setChecked(true)
+  await text.fill('O')
   await page.getByRole('button', { name: 'One bulb', exact: true }).click()
   await setControl(page.getByRole('spinbutton', { name: 'Bulb diameter (millimetres)', exact: true }), '20')
   await setControl(page.getByRole('spinbutton', { name: 'Bulb height (percent)', exact: true }), '75')
   await setControl(page.getByRole('spinbutton', { name: 'Ceiling light intensity (percent)', exact: true }), '0')
-  const frames: Record<string, Buffer[]> = {}
-  for (const variant of ['plain', 'black', 'beige']) {
-    await enabled.setChecked(variant !== 'plain')
-    if (variant !== 'plain') await page.getByRole('group', { name: 'Text color', exact: true }).getByRole('button', { name: variant === 'black' ? 'Black' : 'Beige', exact: true }).click()
-    await light.setChecked(true)
-    const on = await settledFrame(canvas)
-    await light.setChecked(false)
-    const off = await settledFrame(canvas)
-    frames[variant] = [on, off]
-    await writeFile(testInfo.outputPath(`multicolor-${variant}-room-light.png`), on)
+  await setControl(page.getByRole('spinbutton', { name: 'Vertical placement (percent)', exact: true }), '35')
+  await preview.focus()
+  await preview.press('Home')
+  // Keep the entire foreground projection visible beside the frame and above
+  // the toolbar, using the same orbit/zoom controls available to the user.
+  for (let step = 0; step < 12; step++) await preview.press('ArrowLeft')
+  for (let step = 0; step < 2; step++) await preview.press('-')
+  const frames: Buffer[] = []
+  for (const glyph of ['plain', 'O', 'H']) {
+    await enabled.setChecked(glyph !== 'plain')
+    if (glyph !== 'plain') await text.fill(glyph)
+    const frame = await settledFrame(canvas)
+    frames.push(frame)
+    await writeFile(testInfo.outputPath(`native-internal-${glyph.toLowerCase()}.png`), frame)
   }
-  const black = await roomTransmissionDifference(page, [...frames.plain, ...frames.black])
-  const beige = await roomTransmissionDifference(page, [...frames.plain, ...frames.beige])
-  await writeFile(testInfo.outputPath('text-room-transmission.json'), JSON.stringify({ defaultLed, black, beige }, null, 2))
-  await testInfo.attach('text-room-transmission', { body: JSON.stringify({ defaultLed, black, beige }, null, 2), contentType: 'application/json' })
-  expect(Math.max(...defaultLed.map(patch => patch.blockedLight)), 'default LED lighting shows visible diffuse text occlusion').toBeGreaterThan(1)
-  expect(Math.max(...defaultLed.map(patch => patch.strongShadowFraction)), 'the diffuse LED shadow covers a visible receiver area').toBeGreaterThan(0.05)
-  expect(Math.max(...black.map(patch => patch.blockedLight)), 'the shadow must darken a substantial receiver area, beyond sub-pixel noise').toBeGreaterThan(1)
-  expect(Math.max(...black.map(patch => patch.strongShadowFraction)), 'at least five percent of a room receiver has visibly darker text-shadow contrast').toBeGreaterThan(0.05)
-  expect(Math.max(...black.map(patch => patch.percentile95)), 'the receiver includes clear shadow contrast across multiple luminance levels').toBeGreaterThan(8)
-  expect(black.reduce((total, patch) => total + patch.blockedLight, 0), 'black blocks more transmitted light than beige').toBeGreaterThan(beige.reduce((total, patch) => total + patch.blockedLight, 0))
+  const bounds = (await canvas.boundingBox())!
+  const regions = await shadowShapeDifference(page, frames, floorShadowProbes(bounds.width, bounds.height))
+  const metrics = JSON.stringify({ internal: regions }, null, 2)
+  await writeFile(testInfo.outputPath('native-shadow-shape.json'), metrics)
+  await testInfo.attach('native-shadow-shape', { body: metrics, contentType: 'application/json' })
+  const counter = regions.find(region => region.name === 'counter')!
+  const strokes = regions.filter(region => region.name !== 'counter')
+  expect(Math.min(...strokes.map(region => region.o)), 'both O strokes cast visibly dark shadows on the predicted floor positions').toBeGreaterThan(8)
+  expect(counter.o, 'the O counter stays brighter than either surrounding stroke').toBeLessThan(Math.min(...strokes.map(region => region.o)) * 0.5)
+  expect(counter.h - counter.o, 'replacing O with H darkens the counter at the predicted center bar, beyond a global brightness change').toBeGreaterThan(8)
   expect(errors).toEqual([])
 })

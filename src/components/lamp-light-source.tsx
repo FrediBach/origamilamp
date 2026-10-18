@@ -101,7 +101,9 @@ export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial 
       </>}
     </group>)}
       {brightness > 0 && samples.map((source, index) => <pointLight
-        key={`emission-${index}`}
+        // Three does not resize an existing point-light cube shadow target.
+        // Recreate the light when its required shadow resolution changes.
+        key={`emission-${source.kind}-${parameters.textEnabled}-${index}`}
         ref={light => { points.current[index] = light }}
         position={[0, luminousCenter(source, source.inverted) / 1000, 0]}
         color={lighting.color}
@@ -109,12 +111,14 @@ export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial 
         distance={5}
         decay={2}
         castShadow
-        shadow-mapSize={source.kind === 'led' ? [256, 256] : [512, 512]}
+        shadow-mapSize={source.kind === 'led'
+          ? (parameters.textEnabled ? [512, 512] : [256, 256])
+          : (parameters.textEnabled ? [1024, 1024] : [512, 512])}
         shadow-camera-near={0.005}
         shadow-camera-far={5}
         shadow-normalBias={0.001}
         shadow-bias={-0.00005}
-        shadow-radius={3}
+        shadow-radius={1.5}
       />)}
   </group>
 }

@@ -53,7 +53,7 @@ export function TextControls({ parameters: p, onUpdate }: {
       {number('textVertical', 'Vertical placement', 0, 100, '%', '0% is the bottom; 100% is the top. Only text beyond the top and bottom is cropped.')}
       <p className="control-hint text-print-note">Smooth, heavy letter outlines fill the TPU membranes and wrap continuously around the shade. Fold joins keep the base color. Placement follows the full display height, so the lettering folds with preview expansion.</p>
       <p className="control-hint">Black and brown block most of the lamp light. Beige casts a lighter shadow. Export includes two TPU colors and removable PLA; test their bond on a calibration print.</p>
-      <p className="control-hint">A small bulb casts sharper letter shapes. The LED column casts softer shadows.</p>
+      <p className="control-hint">For clearer letter shadows, choose One bulb, place it above the text and dim the ceiling light. The full-height LED creates overlapping shadows that can fill in small letters.</p>
     </div>}
   </section>
 }

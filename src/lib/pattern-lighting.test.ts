@@ -292,6 +292,22 @@ describe('patterned light transport', () => {
     geometry.dispose()
   })
 
+  it('leaves pigment to native shadow maps instead of applying a second blurred text shadow', () => {
+    const p: LampParameters = { ...pattern, lightSource: 'bulb', textEnabled: true, text: 'O', textSize: 60 }
+    const plain = { ...p, textEnabled: false }
+    const geometry = buildExpandedGeometry(p)
+    const withText = buildPatternLightMaps(p, geometry), withoutText = buildPatternLightMaps(plain, geometry)
+    try {
+      expect(patternLightingKey(p, false)).not.toBe(patternLightingKey(plain, false))
+      expect(patternLightingKey(p, false)).toBe(patternLightingKey({ ...p, textAzimuth: 90, textColor: 'beige' }, false))
+      expect(withText).toHaveLength(1)
+      expect(withText[0].texture.image.data).toEqual(withoutText[0].texture.image.data)
+    } finally {
+      [...withText, ...withoutText].forEach(map => map.texture.dispose())
+      geometry.dispose()
+    }
+  })
+
   it('casts pigment shadows on the printed front face and retains a softer beige transmission', () => {
     const p: LampParameters = { ...pattern, cutoutPattern: 'none', textEnabled: true, text: 'I', textSize: 60, textVertical: 50 }
     const geometry = buildExpandedGeometry(p)

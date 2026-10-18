@@ -11,7 +11,7 @@ import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geo
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
-import { applyPatternTransmission, applyTextTransmission, buildTextMaskAtlas, textMaskKey, textShaderKey } from '@/lib/shade-material'
+import { applyPatternTransmission, applyTextTransmission, applyTextShadow, buildTextMaskAtlas, textMaskKey, textShaderKey } from '@/lib/shade-material'
 import { TEXT_COLORS } from '@/lib/text-projection'
 import { patternLightingKey } from '@/lib/pattern-lighting'
 import { PatternLightProjection } from '@/components/pattern-light-projection'
@@ -99,7 +99,8 @@ function Box({ position, size, color, map, rotation, castShadow = true }: {
 
 function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters' | 'lightOn'> & { floorY: number }) {
   const opticalKey = patternLightingKey(parameters)
-  const geometry = useMemo(() => buildExpandedGeometry(parameters), [opticalKey])
+  const geometryKey = patternLightingKey(parameters, false)
+  const geometry = useMemo(() => buildExpandedGeometry(parameters), [geometryKey])
   const { width: w, depth: d } = useMemo(() => previewFrameDimensions(geometry), [geometry])
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useWoodMaterials(parameters.frameWood)
@@ -122,9 +123,20 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const colors = { ivory: '#e8dfcb', natural: '#d7c7a6', white: '#f5f1e6' }
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
     <mesh geometry={geometry} position={[0, mounting.lowerY / 1000, 0]} castShadow receiveShadow>
-      {/* The diffuser transmits its internal point lights, while retaining its
-          silhouette in the ceiling spotlight's ordinary depth shadow map. */}
-      <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
+      <meshDistanceMaterial
+        key={`text-distance-${opticalKey}`}
+        attach="customDistanceMaterial"
+        alphaHash
+        onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, false)}
+        customProgramCacheKey={() => `text-distance-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+      />
+      <meshDepthMaterial
+        key={`text-depth-${opticalKey}`}
+        attach="customDepthMaterial"
+        alphaHash
+        onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, true)}
+        customProgramCacheKey={() => `text-depth-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+      />
       <meshStandardMaterial
         key={`${opticalKey}-${thinGlow.uuid}`}
         ref={shadeMaterial}

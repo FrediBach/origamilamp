@@ -11,7 +11,7 @@ import { textAtPrintPoint } from './text-projection'
 import { textPigmentAbsorption } from './shade-material'
 
 // A finite optical-depth map, not an opaque shadow or an additive floor decal.
-// Ordinary point-light shadow maps still account for wood, clamps and furniture.
+// Native point-light shadow maps account for lettering, wood and furniture.
 export const OPTICAL_LAYERS = 8
 export const OPTICAL_MAP_WIDTH = 256
 export const OPTICAL_MAP_HEIGHT = 128
@@ -20,13 +20,15 @@ export type OpticalCrossing = { distance: number; transmission: number; thicknes
 
 /** Include only dependencies which change the actual optical geometry. Power,
  * flicker, colour and room materials update lighting without rebuilding maps. */
-export function patternLightingKey(p: LampParameters) {
+export function patternLightingKey(p: LampParameters, includePigment = true) {
   return JSON.stringify([
     p.shape, p.width, p.depth, p.height, p.sides, p.pleats, p.bandWidth, p.cornerRadius,
     p.twist, p.modulation, p.expansion, p.layerHeight, p.tpuLayers, p.separatorLayers,
     p.innerConnector, p.outerConnector, p.extrusionWidth, p.cutoutPattern,
     p.cutoutCount, p.cutoutSpacing, p.cutoutEvery, p.cutoutPhase, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
-    p.textEnabled, ...(p.textEnabled ? [p.text, p.textColor, p.textSize, p.textRotation, p.textAzimuth, p.textHorizontal, p.textVertical] : []),
+    // Enabling lettering selects the shared arclength contour parameterization.
+    p.textEnabled,
+    ...(includePigment && p.textEnabled ? [p.text, p.textColor, p.textSize, p.textRotation, p.textAzimuth, p.textHorizontal, p.textVertical] : []),
     deriveLighting(p).sources,
   ])
 }
@@ -169,7 +171,10 @@ export function buildPatternLightMaps(p: LampParameters, geometry: THREE.BufferG
   const { sources } = deriveLighting(p)
   if (sources.some(source => ![source.centerY, source.height, source.diameter].every(Number.isFinite))) return []
   const samples = lampEmissionSamples(sources)
-  const caster = createOpticalCaster(p, geometry)
+  // Lettering participates in the renderer's native shadow maps. Only the
+  // translucent base belongs in this softened transport map; including ink
+  // here would add a second, blurred shadow over the actual glyph silhouette.
+  const caster = createOpticalCaster({ ...p, textEnabled: false }, geometry)
   try { return samples.map(source => buildPatternLightMap(p, source, source.inverted, OPTICAL_MAP_WIDTH, OPTICAL_MAP_HEIGHT, caster)) }
   finally { caster.dispose() }
 }
