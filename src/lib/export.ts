@@ -4,9 +4,10 @@ import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, validateLamp, ty
 import { buildManufacturingGeometry, type ManufacturingOptions } from './manufacturing'
 import { deriveMounting, MOUNTING } from './mounting'
 import { WOOD_FINISHES } from './wood'
+import { cutoutProfile } from './cutout-patterns'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutDepth', 'cutoutLayers'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutSpacing', 'cutoutEvery', 'cutoutDepth', 'cutoutLayers'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -45,12 +46,16 @@ export function serializeDesign(parameters: LampParameters): string {
       lightPattern: {
         shape: parameters.cutoutPattern,
         repeats: parameters.cutoutCount,
+        spacingPercent: parameters.cutoutSpacing,
+        outsideGapMillimetres: cutoutProfile(parameters).gapMm,
+        everyMembranes: parameters.cutoutEvery,
+        schedule: 'Start at the first unclamped membrane, then repeat at this membrane interval. Skipped membranes and both clamped ends stay full thickness.',
         depthPercent: parameters.cutoutDepth,
         remainingTPULayers: parameters.cutoutLayers,
         remainingThicknessMillimetres: parameters.cutoutLayers * parameters.layerHeight,
         construction: 'alternating-face-recesses-in-outward-open-PLA-separators',
         releaseEdge: 'outer',
-        release: 'All recesses widen toward the outside edge. Odd-indexed active membranes are recessed on top, even-indexed active membranes on the bottom, joining the same outward-open PLA separator. Inner folds and both terminal membranes remain full thickness.',
+        release: 'All recesses widen toward the outside edge. Selected odd-indexed active membranes are recessed on top, selected even-indexed active membranes on the bottom, joining only outward-open PLA separators. Skipped membranes, inner folds and both terminal membranes remain full thickness.',
       },
       mounting: {
         type: 'top-and-bottom-two-piece-perimeter-clamps',
@@ -155,10 +160,13 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const baseWoodName = p.electronicsBox ? boxWoodName : frameWoodName
   const patternInstructions = p.cutoutPattern === 'none' ? 'Light patterns: disabled; full-thickness TPU membranes.'
     : `Light patterns: ${p.cutoutPattern}, ${p.cutoutCount} repeats, ${p.cutoutDepth}% depth.
+Spacing: ${p.cutoutSpacing}% of each repeat, ${cutoutProfile(p).gapMm.toFixed(2)} mm between cutout mouths along the outside edge.
+Pattern every ${p.cutoutEvery} membrane(s), starting at the first unclamped membrane.
+This interval counts folded membranes, not individual printer layers. Skipped membranes remain full thickness.
 Remaining patterned TPU: ${p.cutoutLayers} complete layer(s), ${(p.cutoutLayers * p.layerHeight).toFixed(3)} mm; these are NOT through-holes.
-Recesses open ONLY at the outside edge. Odd-indexed active membranes have top
-recesses, connected to the separator above; even-indexed membranes have bottom
-recesses, connected to the separator below. Each pair joins the same outward-open
+Recesses open ONLY at the outside edge. Selected odd-indexed membranes have top
+recesses, connected to the separator above; selected even-indexed membranes have
+bottom recesses, connected to the separator below. Each joins an outward-open
 PLA separator. The remaining TPU lies below top recesses and above bottom recesses.
 Pull the patterned PLA outward. Inner folds stay full thickness with no recesses.
 The two terminal clamping membranes remain full thickness. Inspect the pattern

@@ -113,6 +113,7 @@ const settingNames: Partial<Record<keyof LampParameters, string>> = {
   expansion: 'Expansion', tpuLayers: 'TPU layers', separatorLayers: 'Separator layers',
   cutoutLayers: 'Remaining TPU layers',
   cutoutCount: 'Pattern repeats',
+  cutoutSpacing: 'Cutout spacing',
   innerConnector: 'Inner join', outerConnector: 'Outer join',
 }
 function formatSetting(key: keyof LampParameters, value: LampParameters[keyof LampParameters]) {
@@ -120,7 +121,7 @@ function formatSetting(key: keyof LampParameters, value: LampParameters[keyof La
   if (typeof value !== 'number') return String(value)
   const number = Number(value.toFixed(3)).toString()
   if (key === 'pleats' || key === 'tpuLayers' || key === 'separatorLayers' || key === 'cutoutLayers' || key === 'cutoutCount') return number
-  return `${number}${key === 'twist' ? '°' : key === 'modulation' || key === 'expansion' ? '%' : ' mm'}`
+  return `${number}${key === 'twist' ? '°' : key === 'modulation' || key === 'expansion' || key === 'cutoutSpacing' ? '%' : ' mm'}`
 }
 
 function isSafeCorrection(original: LampParameters, diagnostics: Diagnostic[], result: LampParameters, target: string) {
@@ -165,7 +166,8 @@ export function getPrintabilityFix(parameters: LampParameters, diagnosticId: str
       p.pleats = 2
       break
     case 'cutout-web':
-      label = 'Reduce pattern repeats'
+      label = 'Widen the solid gaps'
+      while (p.cutoutSpacing < 80 && validateLamp(p).some(item => item.id === 'cutout-web' && item.status === 'error')) p.cutoutSpacing = Math.min(80, Math.ceil(p.cutoutSpacing + 1))
       while (p.cutoutCount > 4 && validateLamp(p).some(item => item.id === 'cutout-web' && item.status === 'error')) p.cutoutCount--
       break
     case 'contours':

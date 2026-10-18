@@ -37,6 +37,51 @@ function audit(geometry: BufferGeometry) {
 const patterns = ['triangles', 'half-circles', 'rectangles'] as const
 
 describe('outside-open thinner TPU patterns', () => {
+  it.each(patterns)('changes the outside gap without moving pattern centres or depth: %s', cutoutPattern => {
+    const p = { ...DEFAULT_PARAMETERS, shape: 'circle' as const, pleats: 4, cutoutPattern }
+    const profiles = [5, 30, 80].map(cutoutSpacing => cutoutProfile({ ...p, cutoutSpacing }))
+    expect(profiles[1].mouthFraction).toBeCloseTo(0.7)
+    for (const cutoutSpacing of [5, 30, 80]) {
+      const changed = { ...p, cutoutSpacing }
+      const profile = cutoutProfile(changed)
+      expect(profile.gapFraction).toBeCloseTo(cutoutSpacing / 100)
+      expect(profile.outerPerimeterMm).toBeCloseTo(Math.PI * p.width)
+      expect(profile.gapMm + profile.mouthMm).toBeCloseTo(Math.PI * p.width / p.cutoutCount)
+      expect(cutoutPolygons(changed, 1)).toHaveLength(p.cutoutCount)
+      for (let slot = 0; slot < p.cutoutCount; slot++) {
+        const center = (slot + 0.5) / p.cutoutCount
+        expect(cutoutDepthAt(changed, center)).toBeCloseTo(profile.depthMm)
+        expect(cutoutDepthAt(changed, center + profile.halfWidth * 0.99)).toBeGreaterThan(0)
+        expect(cutoutDepthAt(changed, center + profile.halfWidth * 1.01)).toBe(0)
+      }
+    }
+    expect(profiles[0].mouthMm).toBeGreaterThan(profiles[1].mouthMm)
+    expect(profiles[2].gapMm).toBeGreaterThan(profiles[1].gapMm)
+    expect(cutoutMinimumWeb({ ...p, cutoutSpacing: 80 })).toBeGreaterThan(cutoutMinimumWeb({ ...p, cutoutSpacing: 5 }))
+  })
+
+  it('bounds spacing and intervals and reports the rounded-rectangle outside perimeter', () => {
+    const p = { ...DEFAULT_PARAMETERS, shape: 'rounded-rectangle' as const }
+    expect(cutoutProfile({ ...p, cutoutSpacing: 0, cutoutEvery: 0 })).toMatchObject({ gapFraction: .05, every: 1 })
+    expect(cutoutProfile({ ...p, cutoutSpacing: 100, cutoutEvery: 30 })).toMatchObject({ gapFraction: .8, every: 24 })
+    expect(cutoutProfile({ ...p, cutoutSpacing: NaN, cutoutEvery: NaN })).toMatchObject({ gapFraction: .3, every: 1 })
+    expect(cutoutProfile(p).outerPerimeterMm).toBeCloseTo(2 * (p.width + p.depth - 4 * p.cornerRadius) + 2 * Math.PI * p.cornerRadius)
+  })
+
+  it.each([1, 2, 3, 24])('patterns every %ith active membrane while preserving physical release faces and solid ends', cutoutEvery => {
+    for (const pleats of [1, 2, 4]) {
+      const p = { ...DEFAULT_PARAMETERS, pleats, cutoutEvery, cutoutPattern: 'triangles' as const }
+      const center = 0.5 / p.cutoutCount
+      for (let sheet = 0; sheet < pleats * 2; sheet++) {
+        const selected = sheet > 0 && sheet < pleats * 2 - 1 && (sheet - 1) % cutoutEvery === 0
+        expect(cutoutRecessFace(p, sheet)).toBe(selected ? sheet % 2 === 1 ? 'top' : 'bottom' : null)
+        expect(cutoutAt(p, sheet, center, 0)).toBe(selected)
+        expect(cutoutPolygons(p, sheet)).toHaveLength(selected ? p.cutoutCount : 0)
+        if (!selected) expect(cutoutLayerRange(p, sheet)).toBeNull()
+      }
+    }
+  })
+
   it.each(patterns)('keeps every recess open to the outside with untouched inner rims and terminal sheets: %s', cutoutPattern => {
     const p = { ...DEFAULT_PARAMETERS, pleats: 4, cutoutPattern }
     const { count, depthMm, remainingThickness, normalThickness, webMm } = cutoutProfile(p)
@@ -90,6 +135,9 @@ describe('outside-open thinner TPU patterns', () => {
     { cutoutPattern, shape: 'circle' as const, pleats: 4, cutoutDepth: 75 },
     { cutoutPattern, shape: 'rounded-rectangle' as const, pleats: 4, cutoutDepth: 55 },
     { cutoutPattern, shape: 'rounded-rectangle' as const, pleats: 2, bandWidth: 5.4, cornerRadius: 6, height: 100, cutoutCount: 32, cutoutDepth: 10, tpuLayers: 4, cutoutLayers: 3 },
+    { cutoutPattern, shape: 'circle' as const, pleats: 4, cutoutSpacing: 5, cutoutEvery: 2 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, pleats: 4, cutoutSpacing: 80, cutoutEvery: 3, cutoutCount: 7 },
+    { cutoutPattern, shape: 'circle' as const, pleats: 2, cutoutSpacing: 80, cutoutEvery: 24, cutoutCount: 4 },
   ]))('prints complementary manifold solids with all separator tongues attached: %j', change => {
     const p: LampParameters = { ...DEFAULT_PARAMETERS, ...change }
     const geometry = buildManufacturingGeometry(p)
@@ -119,7 +167,7 @@ describe('outside-open thinner TPU patterns', () => {
     const recessArea = areas.reduce((sum, value, face) => sum + (layout.faces[face].outerCutout ? value : 0), 0)
     const expectedTpu = area * deriveLamp(p).sheets * p.tpuLayers * p.layerHeight
       + (outsideJoinArea * p.pleats + insideJoinArea * (p.pleats - 1)) * p.separatorLayers * p.layerHeight
-      - recessArea * (deriveLamp(p).sheets - 2) * (p.tpuLayers - p.cutoutLayers) * p.layerHeight
+      - recessArea * Math.ceil((deriveLamp(p).sheets - 2) / p.cutoutEvery) * (p.tpuLayers - p.cutoutLayers) * p.layerHeight
     expect(tpu.volume / expectedTpu).toBeCloseTo(1, 6)
     for (const mesh of Object.values(geometry)) {
       const position = mesh.getAttribute('position')
@@ -146,10 +194,15 @@ describe('outside-open thinner TPU patterns', () => {
     geometry.tpu.dispose(); geometry.pla.dispose()
   })
 
-  it.each(patterns.flatMap(cutoutPattern => (['circle', 'rounded-rectangle'] as const).map(shape => ({ cutoutPattern, shape }))))('prints outward release paths, correctly oriented residual skins and no inside recesses: %j', ({ cutoutPattern, shape }) => {
+  it.each(patterns.flatMap(cutoutPattern => [
+    { cutoutPattern, shape: 'circle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12 },
+    { cutoutPattern, shape: 'circle' as const, cutoutEvery: 2, cutoutSpacing: 5, cutoutCount: 4 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 3, cutoutSpacing: 80, cutoutCount: 4 },
+  ]))('prints outward release paths, correctly oriented residual skins and no inside recesses: %j', change => {
     // Unequal recess/residual thickness catches an accidental top-only slab
     // schedule that a symmetric one-layer / one-layer membrane would hide.
-    const p = { ...DEFAULT_PARAMETERS, pleats: 4, shape, cutoutPattern, tpuLayers: 4, cutoutLayers: 1 }
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, ...change, tpuLayers: 4, cutoutLayers: 1 }
     const geometry = buildManufacturingGeometry(p)
     const material = new MeshBasicMaterial({ side: DoubleSide })
     const tpu = new Mesh(geometry.tpu, material), pla = new Mesh(geometry.pla, material)
@@ -162,11 +215,20 @@ describe('outside-open thinner TPU patterns', () => {
       const skinZ = z + (top ? p.cutoutLayers / 2 : recessLayers + p.cutoutLayers / 2) * p.layerHeight
       const floorZ = z + (top ? p.cutoutLayers : recessLayers) * p.layerHeight
       for (let slot = 0; slot < p.cutoutCount; slot++) for (const offset of [-0.2, 0.07, 0.2]) {
-        const u = (slot + 0.5 + offset) / p.cutoutCount
+        const u = (slot + 0.5 + offset * cutoutProfile(p).mouthFraction / .7) / p.cutoutCount
         const distance = cutoutDepthAt(p, u) * 0.45
         const inset = distance
         const [x, y] = cutoutContourPoint(p, u, inset)
         const pocket = new Vector3(x, y, pocketZ)
+        if ((sheet - 1) % p.cutoutEvery !== 0) {
+          // Skipped membranes must contain full-thickness TPU at the same
+          // pattern footprint, with no hidden PLA skin on either face.
+          for (const point of [pocket, new Vector3(x, y, skinZ)]) {
+            expect(inside(tpu, point)).toBe(true)
+            expect(inside(pla, point)).toBe(false)
+          }
+          continue
+        }
         expect(inside(pla, pocket)).toBe(true)
         expect(inside(tpu, pocket)).toBe(false)
         expect(inside(tpu, new Vector3(x, y, skinZ))).toBe(true)
@@ -207,7 +269,10 @@ describe('outside-open thinner TPU patterns', () => {
     const p = { ...DEFAULT_PARAMETERS, shape: 'circle' as const, width: 66, lightDiameter: 8, lightClearance: 0, cutoutPattern: 'triangles' as const, cutoutCount: 32 }
     expect(cutoutMinimumWeb(p)).toBeLessThan(2 * p.extrusionWidth)
     expect(manufacturingErrors(p)).toContainEqual(expect.objectContaining({ id: 'cutout-web' }))
-    expect(() => buildManufacturingGeometry(p)).toThrow(/Pattern repeats leave too little solid TPU/)
+    expect(() => buildManufacturingGeometry(p)).toThrow(/Patterns leave too little solid TPU/)
+    const spaced = { ...p, cutoutSpacing: 80 }
+    expect(cutoutMinimumWeb(spaced)).toBeGreaterThan(2 * p.extrusionWidth)
+    expect(manufacturingErrors(spaced)).not.toContainEqual(expect.objectContaining({ id: 'cutout-web' }))
   })
 
   it.each(patterns)('exposes the same outside-connected polygon footprints on odd and even sheets: %s', cutoutPattern => {

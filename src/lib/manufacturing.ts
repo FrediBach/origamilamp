@@ -280,6 +280,7 @@ function buildPatternedBoundary(p: LampParameters, layout: CutoutLayout, materia
     membraneCount: sheets, separatorCount: sheets - 1,
     layerBoundaries, nominalLayerHeight: p.layerHeight,
     cutoutPattern: p.cutoutPattern, cutoutLayers: p.cutoutLayers,
+    cutoutSpacing: p.cutoutSpacing, cutoutEvery: p.cutoutEvery,
     cutoutFace: 'top-odd-bottom-even', extraction: 'outside-perimeter-to-outward-open-separator',
     physicalValidation: 'pending',
   }

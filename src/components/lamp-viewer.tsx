@@ -121,11 +121,11 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           silhouette in the ceiling spotlight's ordinary depth shadow map. */}
       <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
       <meshStandardMaterial
-        key={patterned ? `${opticalKey}-${thinGlow.uuid}` : 'plain'}
+        key={`${opticalKey}-${thinGlow.uuid}`}
         ref={shadeMaterial}
         userData={{ isTPUDiffuser: true }}
         onBeforeCompile={shader => applyPatternTransmission(shader, parameters, thinGlow)}
-        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v1' : 'shade-transmission-v1'}
+        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v2' : 'shade-transmission-v2'}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}

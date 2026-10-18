@@ -1,13 +1,29 @@
 import type { LampParameters } from './lamp'
 
 const TAU = 2 * Math.PI
-const MOUTH_FRACTION = 0.7
 const RECTANGLE_DRAFT = 0.04
+
+function outerPerimeter(p: LampParameters): number {
+  if (p.shape === 'circle') return Math.PI * p.width
+  if (p.shape === 'rounded-rectangle') return 2 * (p.width + p.depth - 4 * p.cornerRadius) + TAU * p.cornerRadius
+  let perimeter = 0
+  for (let side = 0; side < p.sides; side++) {
+    const a = cutoutContourPoint(p, side / p.sides, 0)
+    const b = cutoutContourPoint(p, (side + 1) / p.sides, 0)
+    perimeter += Math.hypot(b[0] - a[0], b[1] - a[1])
+  }
+  return perimeter
+}
 
 /** Manufacturing and optics share nominal, unexpanded sheet coordinates:
  * u follows the outer perimeter counterclockwise, and inset runs outer→inner. */
 export function cutoutProfile(p: LampParameters) {
   const count = Math.max(4, Math.min(32, Math.round(p.cutoutCount || 12)))
+  const gapFraction = Math.max(5, Math.min(80, Number.isFinite(p.cutoutSpacing) ? p.cutoutSpacing : 30)) / 100
+  const mouthFraction = 1 - gapFraction
+  const every = Math.max(1, Math.min(24, Math.round(Number.isFinite(p.cutoutEvery) ? p.cutoutEvery : 1)))
+  const outerPerimeterMm = outerPerimeter(p)
+  const pitchMm = outerPerimeterMm / count
   const normalThickness = p.tpuLayers * p.layerHeight
   const remainingThickness = p.cutoutLayers * p.layerHeight
   const webMm = p.extrusionWidth
@@ -17,7 +33,8 @@ export function cutoutProfile(p: LampParameters) {
   ))
   return {
     enabled: p.cutoutPattern !== 'none' && p.pleats > 1 && depthMm > 0 && remainingThickness > 0 && remainingThickness < normalThickness,
-    count, depthMm, normalThickness, remainingThickness, halfWidth: MOUTH_FRACTION / (2 * count), webMm,
+    count, depthMm, normalThickness, remainingThickness, halfWidth: mouthFraction / (2 * count), webMm,
+    gapFraction, mouthFraction, every, outerPerimeterMm, gapMm: pitchMm * gapFraction, mouthMm: pitchMm * mouthFraction,
   }
 }
 
@@ -25,7 +42,8 @@ export function cutoutProfile(p: LampParameters) {
  * Odd sheets open upward, even sheets downward; the opposite gap has an
  * outer TPU join and must never receive patterned PLA. */
 export function cutoutRecessFace(p: LampParameters, sheet: number): 'top' | 'bottom' | null {
-  if (!cutoutProfile(p).enabled || sheet <= 0 || sheet >= p.pleats * 2 - 1) return null
+  const { enabled, every } = cutoutProfile(p)
+  if (!enabled || sheet <= 0 || sheet >= p.pleats * 2 - 1 || (sheet - 1) % every !== 0) return null
   return sheet % 2 === 1 ? 'top' : 'bottom'
 }
 
@@ -43,7 +61,7 @@ export function cutoutDepthAt(p: LampParameters, perimeterFraction: number): num
   const profile = cutoutProfile(p)
   if (!profile.enabled) return 0
   const cycle = ((perimeterFraction * profile.count) % 1 + 1) % 1
-  const across = Math.abs(cycle - 0.5) / (MOUTH_FRACTION / 2)
+  const across = Math.abs(cycle - 0.5) / (profile.mouthFraction / 2)
   if (across >= 1 - 1e-12) return 0
   if (p.cutoutPattern === 'triangles') return profile.depthMm * (1 - across)
   if (p.cutoutPattern === 'half-circles') return profile.depthMm * Math.sqrt(Math.max(0, 1 - across * across))

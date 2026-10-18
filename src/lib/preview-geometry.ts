@@ -37,9 +37,10 @@ export function buildExpandedGeometry(parameters: LampParameters) {
   const indices: number[] = []
   const uv: number[] = []
   const cutoutCoordinates: number[] = []
+  const joinedSheets: number[] = []
 
   type Row = { contour: THREE.Vector2[]; fraction: number; inset: number }
-  function addStrip(from: Row, to: Row, sheet = -1) {
+  function addStrip(from: Row, to: Row, sheet = -1, joinedSheet = -1) {
     const offset = positions.length / 3
     for (const { contour, fraction, inset } of [from, to]) {
       const modulation = 1 + (parameters.modulation / 100) * Math.sin(fraction * Math.PI * 2)
@@ -55,6 +56,9 @@ export function buildExpandedGeometry(parameters: LampParameters) {
         // Keep nominal print coordinates through the folded/deformed preview.
         // Optical masks therefore match the exported recesses, not world Y.
         cutoutCoordinates.push(index / SEGMENTS, inset / parameters.bandWidth, sheet)
+        // A collapsed crease represents both membranes and their retained
+        // TPU connector. Preserve its other sheet for independent cadence.
+        joinedSheets.push(joinedSheet)
       }
     }
     for (let index = 0; index < SEGMENTS; index += 1) {
@@ -68,7 +72,7 @@ export function buildExpandedGeometry(parameters: LampParameters) {
 
   // Sheet 0 and sheet N−1 are full, flat annular flanges. Their free inner
   // edges fit the clamps; their outer rims remain joined to the active bellows.
-  addStrip({ contour: terminalInner, fraction: 0, inset: parameters.bandWidth }, { contour: outer, fraction: 0, inset: 0 })
+  addStrip({ contour: terminalInner, fraction: 0, inset: parameters.bandWidth }, { contour: outer, fraction: 0, inset: 0 }, 0, derived.activeLegs ? 1 : -1)
   for (let leg = 1; leg < legs - 1; leg += 1) {
     const start = (leg - 1) / derived.activeLegs
     const end = leg / derived.activeLegs
@@ -79,19 +83,20 @@ export function buildExpandedGeometry(parameters: LampParameters) {
     // span follows the right triangle used above rather than stretching it.
     // Draw shared bands once; the terminal flanges already cover the end bands.
     addStrip(rows[1], rows[2], leg)
-    if (leg < legs - 2) addStrip(rows[2], rows[3], leg)
+    if (leg < legs - 2) addStrip(rows[2], rows[3], leg, leg + 1)
   }
   if (!derived.activeLegs) {
     // A two-sheet specimen has no active span after reserving both flanges.
     // Keep the flat sheets connected at their outer rim in the compressed view.
     addStrip({ contour: outer, fraction: 0, inset: 0 }, { contour: outer, fraction: 1, inset: 0 })
   }
-  addStrip({ contour: outer, fraction: 1, inset: 0 }, { contour: terminalInner, fraction: 1, inset: parameters.bandWidth })
+  addStrip({ contour: outer, fraction: 1, inset: 0 }, { contour: terminalInner, fraction: 1, inset: parameters.bandWidth }, legs - 1, derived.activeLegs ? legs - 2 : -1)
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
   geometry.setAttribute('cutoutCoord', new THREE.Float32BufferAttribute(cutoutCoordinates, 3))
+  geometry.setAttribute('cutoutJoin', new THREE.Float32BufferAttribute(joinedSheets, 1))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()

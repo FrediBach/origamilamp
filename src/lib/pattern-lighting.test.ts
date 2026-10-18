@@ -4,6 +4,7 @@ import { DEFAULT_PARAMETERS, type LampParameters } from './lamp'
 import { buildExpandedGeometry } from './preview-geometry'
 import { buildPatternLightMap, buildPatternLightMaps, createOpticalCaster, patternLightingKey, transmissionBefore } from './pattern-lighting'
 import { deriveLighting } from './lighting'
+import { applyPatternTransmission } from './shade-material'
 
 const pattern: LampParameters = {
   ...DEFAULT_PARAMETERS, shape: 'circle', pleats: 4, height: 80,
@@ -44,14 +45,78 @@ describe('patterned light transport', () => {
       for (let sheet = 1; sheet < p.pleats * 2 - 1; sheet++) {
         expect(thicknessAt(sheet, 0.1)).toBe(0.2)
         expect(thicknessAt(sheet, 0.9)).toBe(0.8)
-        // Each shared band is drawn once: odd sheets own the inner creases,
-        // even sheets own the outside creases. Neither may invert the mask.
+        // A collapsed joining band represents both membranes plus their
+        // retained TPU connector, with full inner and patterned outer rims.
         if (sheet < p.pleats * 2 - 2) {
-          expect(thicknessAt(sheet, sheet % 2 ? 0.98 : 0.02)).toBe(sheet % 2 ? 0.8 : 0.2)
+          expect(thicknessAt(sheet, sheet % 2 ? 0.98 : 0.02)).toBeCloseTo((sheet % 2 ? 1.6 : 0.4) + p.separatorLayers * p.layerHeight)
         }
       }
-      expect(thicknessAt(-1, 0.02)).toBe(0.8)
+      expect(thicknessAt(0, 0.02)).toBeCloseTo(1 + p.separatorLayers * p.layerHeight)
+      expect(thicknessAt(0, 0.1)).toBe(0.8)
     } finally { caster.dispose(); geometry.dispose() }
+  })
+
+  it.each([1, 2, 3, 4, 5])('thins only every %ith active membrane and sums both sides of shared creases', cutoutEvery => {
+    const p = { ...pattern, cutoutEvery }
+    const geometry = buildExpandedGeometry(p)
+    const caster = createOpticalCaster(p, geometry)
+    const thicknessAt = (sheet: number, inset: number) => {
+      const ray = rayThroughPrintPoint(geometry, sheet, 0.126, inset)
+      return caster.trace(ray.origin, ray.direction)[0]?.thickness
+    }
+    const sheetThickness = (sheet: number) => sheet > 0 && sheet < p.pleats * 2 - 1 && (sheet - 1) % cutoutEvery === 0 ? 0.2 : 0.8
+    const separator = p.separatorLayers * p.layerHeight
+    try {
+      for (let sheet = 1; sheet < p.pleats * 2 - 1; sheet++) {
+        expect(thicknessAt(sheet, 0.1)).toBe(sheetThickness(sheet))
+        if (sheet < p.pleats * 2 - 2) {
+          expect(thicknessAt(sheet, sheet % 2 ? 0.98 : 0.02)).toBeCloseTo(sheet % 2
+            ? 1.6 + separator : sheetThickness(sheet) + sheetThickness(sheet + 1) + separator)
+        }
+      }
+      for (const terminal of [0, p.pleats * 2 - 1]) {
+        expect(thicknessAt(terminal, 0.1)).toBe(0.8)
+        const neighbour = terminal === 0 ? 1 : terminal - 1
+        expect(thicknessAt(terminal, 0.02)).toBeCloseTo(0.8 + sheetThickness(neighbour) + separator)
+      }
+    } finally { caster.dispose(); geometry.dispose() }
+  })
+
+  it.each(['triangles', 'half-circles', 'rectangles'] as const)('changes %s optical coverage with spacing while retaining center depth', cutoutPattern => {
+    const narrowGaps = { ...pattern, cutoutPattern, cutoutSpacing: 10 }
+    const wideGaps = { ...narrowGaps, cutoutSpacing: 80 }
+    const geometry = buildExpandedGeometry(narrowGaps)
+    const narrow = createOpticalCaster(narrowGaps, geometry)
+    const wide = createOpticalCaster(wideGaps, geometry)
+    try {
+      const shoulder = rayThroughPrintPoint(geometry, 1, 0.17, 0.1)
+      expect(narrow.trace(shoulder.origin, shoulder.direction)[0].thickness).toBe(0.2)
+      expect(wide.trace(shoulder.origin, shoulder.direction)[0].thickness).toBe(0.8)
+      const center = rayThroughPrintPoint(geometry, 1, 0.125, 0.5)
+      expect(narrow.trace(center.origin, center.direction)[0].thickness).toBe(0.2)
+      expect(wide.trace(center.origin, center.direction)[0].thickness).toBe(0.2)
+    } finally { narrow.dispose(); wide.dispose(); geometry.dispose() }
+  })
+
+  it('uses the same spacing, cadence and joint thickness in the visible material', () => {
+    const p = { ...pattern, cutoutSpacing: 60, cutoutEvery: 3 }
+    const shader = {
+      uniforms: {}, vertexShader: '#include <begin_vertex>',
+      fragmentShader: '#include <lights_fragment_begin>\n#include <emissivemap_fragment>',
+    } as THREE.WebGLProgramParametersWithUniforms
+    const glow = new THREE.Texture()
+    applyPatternTransmission(shader, p, glow)
+    expect(shader.uniforms.cutoutProfile.value).toEqual([0.2, 3, 0.8, 0.2])
+    expect(shader.uniforms.cutoutJoining.value).toEqual([p.separatorLayers * p.layerHeight, p.outerConnector / p.bandWidth])
+    expect(shader.vertexShader).toContain('vCutoutJoin = cutoutJoin;')
+    expect(shader.fragmentShader).toContain('mod(floor(sheet + 0.5) - 1.0, cutoutProfile.y)')
+    expect(shader.fragmentShader).toContain('cutoutMask(vCutoutJoin)')
+    expect(shader.fragmentShader).toContain('neighbourThickness + cutoutJoining.x')
+    const plain = { uniforms: {}, vertexShader: '', fragmentShader: '#include <emissivemap_fragment>' } as THREE.WebGLProgramParametersWithUniforms
+    applyPatternTransmission(plain, { ...p, cutoutPattern: 'none' }, glow)
+    expect(plain.uniforms.cutoutShape.value).toBe(-1)
+    expect(plain.fragmentShader).toContain('neighbourThickness + cutoutJoining.x')
+    glow.dispose()
   })
 
   it('attenuates the unpatterned baseline and never makes a thin recess transmit less than full TPU', () => {
@@ -141,6 +206,8 @@ describe('patterned light transport', () => {
     expect(patternLightingKey(unchangedGeometry)).toBe(patternLightingKey(pattern))
     expect(patternLightingKey({ ...pattern, bulbHeight: 80, lightSource: 'bulb' })).not.toBe(patternLightingKey(pattern))
     expect(patternLightingKey({ ...pattern, cutoutDepth: 30 })).not.toBe(patternLightingKey(pattern))
+    expect(patternLightingKey({ ...pattern, cutoutSpacing: 60 })).not.toBe(patternLightingKey(pattern))
+    expect(patternLightingKey({ ...pattern, cutoutEvery: 3 })).not.toBe(patternLightingKey(pattern))
   })
 
   it('does not crash the viewer on an invalid intermediate mesh', () => {

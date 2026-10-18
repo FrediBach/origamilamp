@@ -23,20 +23,25 @@ export function applyShadeTransmission(shader: WebGLProgramParametersWithUniform
 export function applyPatternTransmission(shader: WebGLProgramParametersWithUniforms, parameters: LampParameters, thinGlow: Texture) {
   applyShadeTransmission(shader)
   const profile = cutoutProfile(parameters)
-  if (!profile.enabled) return
   shader.uniforms.cutoutThinGlow = { value: thinGlow }
   shader.uniforms.cutoutSettings = { value: [profile.count, profile.depthMm, parameters.bandWidth, parameters.pleats * 2 - 1] }
-  shader.uniforms.cutoutShape = { value: parameters.cutoutPattern === 'triangles' ? 0 : parameters.cutoutPattern === 'half-circles' ? 1 : 2 }
-  shader.vertexShader = 'attribute vec3 cutoutCoord; varying vec3 vCutoutCoord;\n' + shader.vertexShader
-  shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvCutoutCoord = cutoutCoord;')
+  shader.uniforms.cutoutProfile = { value: [profile.mouthFraction / 2, profile.every, profile.normalThickness, profile.remainingThickness] }
+  shader.uniforms.cutoutJoining = { value: [parameters.separatorLayers * parameters.layerHeight, parameters.outerConnector / parameters.bandWidth] }
+  shader.uniforms.cutoutShape = { value: !profile.enabled ? -1 : parameters.cutoutPattern === 'triangles' ? 0 : parameters.cutoutPattern === 'half-circles' ? 1 : 2 }
+  shader.vertexShader = 'attribute vec3 cutoutCoord; attribute float cutoutJoin; varying vec3 vCutoutCoord; varying float vCutoutJoin;\n' + shader.vertexShader
+  shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvCutoutCoord = cutoutCoord;\nvCutoutJoin = cutoutJoin;')
   shader.fragmentShader = `
     uniform sampler2D cutoutThinGlow;
     uniform vec4 cutoutSettings;
+    uniform vec4 cutoutProfile;
+    uniform vec2 cutoutJoining;
     uniform float cutoutShape;
     varying vec3 vCutoutCoord;
-    float cutoutMask() {
-      if (vCutoutCoord.z < 0.5 || vCutoutCoord.z >= cutoutSettings.w - 0.5) return 0.0;
-      float across = abs(fract(vCutoutCoord.x * cutoutSettings.x) - 0.5) / 0.35;
+    varying float vCutoutJoin;
+    float cutoutMask(float sheet) {
+      if (cutoutShape < -0.5 || sheet < 0.5 || sheet >= cutoutSettings.w - 0.5) return 0.0;
+      if (mod(floor(sheet + 0.5) - 1.0, cutoutProfile.y) > 0.5) return 0.0;
+      float across = abs(fract(vCutoutCoord.x * cutoutSettings.x) - 0.5) / cutoutProfile.x;
       float profile = cutoutShape < 0.5 ? max(0.0, 1.0 - across)
         : cutoutShape < 1.5 ? sqrt(max(0.0, 1.0 - across * across))
         : clamp((1.0 - across) / 0.04, 0.0, 1.0);
@@ -51,7 +56,15 @@ export function applyPatternTransmission(shader: WebGLProgramParametersWithUnifo
     #ifdef USE_EMISSIVEMAP
       vec4 normalGlow = texture2D(emissiveMap, vEmissiveMapUv);
       vec4 thinGlow = texture2D(cutoutThinGlow, vEmissiveMapUv);
-      totalEmissiveRadiance *= mix(normalGlow.rgb, thinGlow.rgb, cutoutMask());
+      vec3 membraneGlow = mix(normalGlow.rgb, thinGlow.rgb, cutoutMask(vCutoutCoord.z));
+      bool terminal = vCutoutCoord.z < 0.5 || vCutoutCoord.z >= cutoutSettings.w - 0.5;
+      if (vCutoutJoin >= 0.0 && (!terminal || vCutoutCoord.y <= cutoutJoining.y)) {
+        // The flat crease stands for two joined membranes plus the TPU left
+        // between them. Each membrane keeps its own pattern selection.
+        float neighbourThickness = mix(cutoutProfile.z, cutoutProfile.w, cutoutMask(vCutoutJoin));
+        membraneGlow *= exp(-1.1 * (neighbourThickness + cutoutJoining.x));
+      }
+      totalEmissiveRadiance *= membraneGlow;
     #endif
   `)
 }

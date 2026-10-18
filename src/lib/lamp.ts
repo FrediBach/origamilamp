@@ -25,6 +25,8 @@ export interface LampParameters {
   separatorLayers: number
   cutoutPattern: CutoutPattern
   cutoutCount: number
+  cutoutSpacing: number
+  cutoutEvery: number
   cutoutDepth: number
   cutoutLayers: number
   innerConnector: number
@@ -66,7 +68,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   sides: 6, pleats: 24, bandWidth: 22, cornerRadius: 30,
   twist: 0, modulation: 0, expansion: 100,
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
-  cutoutPattern: 'none', cutoutCount: 12, cutoutDepth: 55, cutoutLayers: 1,
+  cutoutPattern: 'none', cutoutCount: 12, cutoutSpacing: 30, cutoutEvery: 1, cutoutDepth: 55, cutoutLayers: 1,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
   lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightIntensity: 100, lightTemperature: 2700, lightFlicker: 0,
@@ -117,13 +119,15 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   if (typeof p.electronicsBoxHeight !== 'number' || p.electronicsBoxHeight < 20 || p.electronicsBoxHeight > 120) add('base-range', 'error', 'Electronics box height outside the supported range', 'Use 20–120 mm of usable internal height, including when the electronics box is disabled.')
   if (!['none', 'triangles', 'half-circles', 'rectangles'].includes(p.cutoutPattern)
     || !Number.isInteger(p.cutoutCount) || p.cutoutCount < 4 || p.cutoutCount > 32
+    || typeof p.cutoutSpacing !== 'number' || p.cutoutSpacing < 5 || p.cutoutSpacing > 80
+    || !Number.isInteger(p.cutoutEvery) || p.cutoutEvery < 1 || p.cutoutEvery > 24
     || typeof p.cutoutDepth !== 'number' || p.cutoutDepth < 10 || p.cutoutDepth > 75
     || !Number.isInteger(p.cutoutLayers) || p.cutoutLayers < 1 || p.cutoutLayers > 19) {
-    add('cutout-range', 'error', 'Light pattern setting out of range', 'Choose no pattern, triangles, half circles or rectangles; use 4–32 repeats, 10–75% depth and 1–19 remaining TPU layers.')
+    add('cutout-range', 'error', 'Light pattern setting out of range', 'Choose no pattern, triangles, half circles or rectangles; use 4–32 repeats, 5–80% spacing, every 1–24 membranes, 10–75% depth and 1–19 remaining TPU layers.')
   } else if (p.cutoutPattern !== 'none') {
     if (p.cutoutLayers >= p.tpuLayers) add('cutout-thickness', 'error', 'Patterns need a thinner membrane', 'Remaining TPU layers must be at least one and fewer than the full membrane layers. Increase TPU layers in Print setup or reduce the pattern layers.')
     else if (p.pleats < 2) add('cutout-sheets', 'error', 'Patterns need active folds', 'Use at least two full pleats. The first and last membranes stay full thickness for the clamps.')
-    else add('cutout-release', 'pass', 'Pattern recesses open to the outside', `${(p.cutoutLayers * p.layerHeight).toFixed(2)} mm continuous TPU remains. Recesses alternate between top and bottom faces, joining only separators that open outside. Inner folds and terminal membranes stay full thickness. Verify outward release on the patterned calibration print.`)
+    else add('cutout-release', 'pass', 'Pattern recesses open to the outside', `${(p.cutoutLayers * p.layerHeight).toFixed(2)} mm continuous TPU remains. Patterned membranes use the face adjoining an outside-opening separator. Skipped membranes, inner folds and terminal membranes stay full thickness. Verify outward release on the patterned calibration print.`)
   }
   if (p.expansion < 0 || p.expansion > 100 || Math.abs(p.twist) > 180 || Math.abs(p.modulation) > 100 || !Number.isInteger(p.sides) || p.sides < 3 || p.sides > 32) add('preview-range', 'error', 'Preview setting out of range', 'Expansion: 0–100%; twist: ±180°; modulation: ±100%; polygon sides: 3–32.')
   if ([p.lightTemperature, p.ceilingLightTemperature].some(temperature => temperature < 1800 || temperature > 6500) || typeof p.lightIntensity !== 'number' || p.lightIntensity < 0 || p.lightIntensity > 200 || typeof p.lightFlicker !== 'number' || p.lightFlicker < 0 || p.lightFlicker > 100 || p.ceilingLightIntensity < 0 || p.ceilingLightIntensity > 200 || p.bulbHeight < 0 || p.bulbHeight > 100 || p.secondBulbHeight < 0 || p.secondBulbHeight > 100) add('lighting-range', 'error', 'Light setting out of range', 'Lamp and ceiling light temperature: 1,800–6,500 K; lamp and ceiling intensity: 0–200%; lamp flicker: 0–100%; each bulb height: 0–100% of its available vertical travel.')
@@ -135,7 +139,7 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   } else add('contours', 'pass', 'Aperture stays open', `${aperture.toFixed(1)} mm minimum opening; alternating separators remain accessible from inside and outside.`)
   if (p.cutoutPattern !== 'none' && !diagnostics.some(item => item.status === 'error')) {
     const web = cutoutMinimumWeb(p)
-    if (web < 2 * p.extrusionWidth - 1e-8) add('cutout-web', 'error', 'Pattern repeats leave too little solid TPU', `The conservative retained web is only ${web.toFixed(2)} mm. Retain at least ${(2 * p.extrusionWidth).toFixed(2)} mm; reduce pattern repeats or increase the inner corner radius/opening.`)
+    if (web < 2 * p.extrusionWidth - 1e-8) add('cutout-web', 'error', 'Patterns leave too little solid TPU', `The conservative retained web is only ${web.toFixed(2)} mm. Retain at least ${(2 * p.extrusionWidth).toFixed(2)} mm; increase cutout spacing, reduce repeats or increase the inner corner radius/opening.`)
   }
   const minFreeSpan = Math.max(3, 4 * p.extrusionWidth)
   if (d.freeSpan < minFreeSpan) add('free-span', 'error', 'Too little free membrane', `Retain at least ${minFreeSpan.toFixed(1)} mm between the two joining bands. Current free span: ${d.freeSpan.toFixed(1)} mm.`)

@@ -20,7 +20,7 @@ export function patternLightingKey(p: LampParameters) {
     p.shape, p.width, p.depth, p.height, p.sides, p.pleats, p.bandWidth, p.cornerRadius,
     p.twist, p.modulation, p.expansion, p.layerHeight, p.tpuLayers, p.separatorLayers,
     p.innerConnector, p.outerConnector, p.extrusionWidth, p.cutoutPattern,
-    p.cutoutCount, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
+    p.cutoutCount, p.cutoutSpacing, p.cutoutEvery, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
     deriveLighting(p).sources,
   ])
 }
@@ -33,6 +33,7 @@ export function createOpticalCaster(p: LampParameters, geometry?: THREE.BufferGe
   if (!geometry) sourceGeometry.dispose()
   const bvh = new MeshBVH(mesh, { maxLeafTris: 8 })
   const coord = mesh.getAttribute('cutoutCoord')
+  const joinedSheet = mesh.getAttribute('cutoutJoin')
   const position = mesh.getAttribute('position')
   const profile = cutoutProfile(p)
   const triangle = new THREE.Triangle()
@@ -54,7 +55,16 @@ export function createOpticalCaster(p: LampParameters, geometry?: THREE.BufferGe
         triangle.getBarycoord(hit.point, barycentric)
         nominal.set(0, 0, 0)
         indices.forEach((index, i) => nominal.addScaledVector(vertex.fromBufferAttribute(coord, index), barycentric.getComponent(i)))
-        const thickness = cutoutAt(p, Math.round(nominal.z), nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness
+        const sheet = Math.round(nominal.z)
+        let thickness = cutoutAt(p, sheet, nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness
+        const adjacent = joinedSheet ? Math.round(joinedSheet.getX(indices[0])) : -1
+        const terminal = sheet === 0 || sheet === p.pleats * 2 - 1
+        // Terminal flanges share only their outer joining strip. Every other
+        // joined triangle is already confined to its flat crease band.
+        if (adjacent >= 0 && (!terminal || nominal.y <= p.outerConnector / p.bandWidth)) {
+          thickness += p.separatorLayers * p.layerHeight
+            + (cutoutAt(p, adjacent, nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness)
+        }
         triangle.getNormal(normal)
         // The finite thickness and strong scattering of TPU bound grazing paths.
         const path = thickness / Math.max(0.15, Math.abs(normal.dot(direction)))

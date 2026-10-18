@@ -58,6 +58,9 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
   const patternedSheet = recessLayers !== null
   const recessedLayer = membrane && recessLayers !== null && withinBlock >= recessLayers[0] && withinBlock < recessLayers[1]
   const recesses = recessedLayer ? cutoutPolygons(p, sheet) : []
+  const sheets = Array.from({ length: d.sheets }, (_, index) => index)
+  const topPatternSheet = sheets.find(index => cutoutRecessFace(p, index) === 'top')
+  const bottomPatternSheet = sheets.find(index => cutoutRecessFace(p, index) === 'bottom')
   const outerJoin = sheet % 2 === 0
   const layerKind = membrane ? recessedLayer ? 'Patterned TPU + PLA recesses' : 'Full TPU membrane' : `${outerJoin ? 'Outer' : 'Inner'} join + PLA separator`
   const effectiveDepth = p.shape === 'circle' ? p.width : p.depth
@@ -97,10 +100,8 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
       <div className="li-jumps" aria-label="Example print layers">
         <span>Jump to</span>
         <button type="button" onClick={() => setRequestedLayer(0)}>Membrane</button>
-        {pattern.enabled && <>
-          <button type="button" onClick={() => setRequestedLayer(stride + p.cutoutLayers)}>Top pattern layer</button>
-          <button type="button" onClick={() => setRequestedLayer(2 * stride)}>Bottom pattern layer</button>
-        </>}
+        {topPatternSheet !== undefined && <button type="button" onClick={() => setRequestedLayer(topPatternSheet * stride + p.cutoutLayers)}>Top pattern layer</button>}
+        {bottomPatternSheet !== undefined && <button type="button" onClick={() => setRequestedLayer(bottomPatternSheet * stride)}>Bottom pattern layer</button>}
         <button type="button" onClick={() => setRequestedLayer(p.tpuLayers)}>Outer join</button>
         {d.separators > 1 && <button type="button" onClick={() => setRequestedLayer(stride + p.tpuLayers)}>Inner join</button>}
       </div>
@@ -162,6 +163,7 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
 
     <div className="li-detail" aria-live="polite" aria-atomic="true">
       <strong>{membrane ? `Membrane ${sheet + 1} of ${d.sheets}` : `Gap ${sheet + 1} of ${d.separators} · membranes ${sheet + 1} and ${sheet + 2}`}</strong>
+      {pattern.enabled && membrane && !patternedSheet && sheet > 0 && sheet < d.sheets - 1 && <p>This membrane is skipped by the pattern interval of {p.cutoutEvery} membranes.</p>}
       <p>{recessedLayer ? `PLA fills the ${recessFace} recesses and joins the separator ${recessFace === 'top' ? 'above' : 'below'}. Peel it out from outside the shade. ${p.cutoutLayers} continuous TPU layer(s), ${mm(pattern.remainingThickness)}, remain ${recessFace === 'top' ? 'below' : 'above'} each pattern.` : membrane ? patternedSheet ? `This layer is continuous TPU. The ${recessFace === 'top' ? 'upper' : 'lower'} ${p.tpuLayers - p.cutoutLayers} layer(s) contain the outside-opening pattern recesses; the inner fold stays ${mm(d.membraneThickness)} thick.` : `All ${p.tpuLayers} layers of this ${mm(d.membraneThickness)} membrane use TPU across the full band. The open centre stays empty.` : `This ${mm(d.separatorThickness)} gap contains both materials: a ${mm(outerJoin ? p.outerConnector : p.innerConnector)} TPU join at the ${outerJoin ? 'outer' : 'inner'} rim and PLA everywhere else in the band. Remove this separator from ${outerJoin ? 'inside the central aperture' : 'outside the shade'}.`}</p>
     </div>
     <p className="li-note">Nominal material layout · {mm(d.compressedHeight)} compressed height · use the same first-layer height. Separator release and folding still require a calibration print.</p>
