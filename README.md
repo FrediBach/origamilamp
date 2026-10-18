@@ -118,6 +118,8 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 
 ## Architecture
 
+See [the detailed architecture guide](docs/architecture.md) for state and persistence, geometry contracts, rendering, export, and extension workflows. [AGENTS.md](AGENTS.md) contains focused development guidance for this repository.
+
 | File | Responsibility |
 | --- | --- |
 | `src/App.tsx` | Canonical UI state, live diagnostics, process help, persistence, imports, and export actions. |
