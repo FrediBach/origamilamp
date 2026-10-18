@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { SceneBook } from '@/components/scene-book'
+import noLongerHumanCover from '@/assets/books/no-longer-human.jpg'
 
 type Vector3Tuple = [number, number, number]
 
@@ -111,7 +113,8 @@ export function BrutalistRoom({ floorY }: { floorY: number }) {
       <Glass position={[0, 0.225, 0]} size={[0.76, 0.018, 0.35]} />
       <Slab position={[0, 0.225, 0.175]} size={[0.76, 0.006, 0.003]} color="#739b96" metal castShadow={false} />
       <Slab position={[0.18, 0.248, -0.015]} size={[0.16, 0.027, 0.12]} color="#c8c8bc" />
-      <Slab position={[0.17, 0.267, -0.01]} size={[0.14, 0.011, 0.11]} color="#414b4b" />
+      <SceneBook cover={noLongerHumanCover} title="No Longer Human" position={[0.17, 0.267, -0.01]}
+        width={0.095} depth={0.095 * 1627 / 1080} thickness={0.011} />
       <mesh position={[-0.19, 0.292, 0]} castShadow receiveShadow>
         <torusGeometry args={[0.055, 0.012, 12, 40]} />
         <meshStandardMaterial color="#8e9b9f" metalness={0.86} roughness={0.26} />

@@ -235,6 +235,8 @@ The diffuser adds back-face diffuse transmission for ceiling, daylight and studi
 
 ### Performance and resource ownership
 
+`SceneBook` places bundled cover images on the top books in the Tatami (Akira 1) and Brutalist (No Longer Human) rooms. Covers retain their image aspect ratios, use sRGB and anisotropic filtering, and receive scene lighting. Each book owns its loaded texture, invalidates the demand renderer when loading completes, and disposes the texture on unmount. Asset sources are recorded in [`src/assets/books/README.md`](../src/assets/books/README.md).
+
 - The Canvas uses `frameloop="demand"`; orbit damping is disabled so a static view can become idle.
 - `useLampFlicker` mutates existing source and material intensities instead of updating React state or rebuilding geometry per frame. It requests frames only for active flicker while the page is visible and the canvas is in view. Manufacturing views unmount this animation.
 - Room and studio shadow quality uses a shared uniform and finite refinement steps, including unlettered shades and lamp-off views. Interaction and animation constrain sampling; it does not require a permanent render loop or shader recompilation for each quality step. Manufacturing views retain the native shadow filter.

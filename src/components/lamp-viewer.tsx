@@ -19,6 +19,8 @@ import { LampMounting } from '@/components/lamp-mounting'
 import { LampBase } from '@/components/lamp-base'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 import { BrutalistRoom } from '@/components/brutalist-room'
+import { SceneBook } from '@/components/scene-book'
+import akiraCover from '@/assets/books/akira-1.jpg'
 import { WoodBox, useWoodMaterials } from '@/components/wood-box'
 import { LAMP_OUTPUT } from '@/components/use-lamp-flicker'
 import { ShadowQualityProvider, useShadowQuality } from '@/components/shadow-quality'
@@ -295,7 +297,8 @@ function JapaneseRoom() {
       {[-0.25, 0.25].map(x => <Box key={x} position={[x, 0.09, 0]} size={[0.035, 0.18, 0.24]} color="#96774f" map={wood} />)}
       <group position={[-0.15, 0.208, 0]}><Vase /></group>
       <Box position={[0.12, 0.217, 0.02]} size={[0.13, 0.015, 0.09]} color="#e2ddcd" />
-      <Box position={[0.11, 0.231, 0.018]} size={[0.12, 0.012, 0.085]} color="#c4c6ad" />
+      <SceneBook cover={akiraCover} title="Akira · Book 1" position={[0.11, 0.231, 0.018]}
+        width={0.085} depth={0.085 * 2085 / 1445} thickness={0.012} />
     </group>
   </group>
 }
