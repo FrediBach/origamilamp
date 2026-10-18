@@ -1,13 +1,11 @@
 import { useId } from 'react'
 import { ParameterControl } from '@/components/parameter-control'
 import { Switch } from '@/components/ui/switch'
-import type { LampParameters, TextColor } from '@/lib/lamp'
-import { TEXT_COLORS as TEXT_PALETTE, textWrapMetrics } from '@/lib/text-projection'
+import type { LampParameters } from '@/lib/lamp'
+import { textWrapMetrics } from '@/lib/text-projection'
 import { cn } from '@/lib/utils'
 
-export const TEXT_COLORS: { id: TextColor; label: string; color: string }[] = [
-  ...(['black', 'brown', 'beige'] as const).map(id => ({ id, label: TEXT_PALETTE[id].name, color: TEXT_PALETTE[id].hex })),
-]
+import { TEXT_COLOR_OPTIONS as TEXT_COLORS } from '@/lib/text-colors'
 
 export function TextControls({ parameters: p, onUpdate }: {
   parameters: LampParameters

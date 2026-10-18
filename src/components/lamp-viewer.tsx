@@ -248,7 +248,7 @@ function Garden() {
     <Branch from={[-0.72, 0.39, -1.5]} to={[-0.22, 0.62, -1.6]} radius={0.012} color="#6b6653" />
     <Branch from={[-0.72, 0.37, -1.5]} to={[-0.91, 0.7, -1.44]} radius={0.01} color="#6b6653" />
     <GardenFoliage />
-    {[[-0.8, -1.2, 0.17], [-1.22, -1.35, 0.11], [-0.4, -1.66, 0.14]].map(([x, z, scale], i) => <mesh key={i} position={[x, scale / 2, z]} scale={[scale * 1.6, scale, scale]} rotation={[0.2, i, 0.1]}>
+    {[[-0.8, -1.2, 0.17], [-1.22, -1.35, 0.11], [-0.4, -1.66, 0.14]].map(([x, z, scale], i) => <mesh key={`${x},${z}`} position={[x, scale / 2, z]} scale={[scale * 1.6, scale, scale]} rotation={[0.2, i, 0.1]}>
       <icosahedronGeometry args={[1, 1]} />
       <meshStandardMaterial color="#9b9d8b" roughness={1} />
     </mesh>)}
@@ -265,7 +265,7 @@ function Vase() {
     <Branch from={[0, 0.1, 0]} to={[0.04, 0.43, 0.02]} radius={0.002} />
     <Branch from={[0.01, 0.25, 0.01]} to={[-0.07, 0.37, 0.01]} radius={0.0014} />
     <Branch from={[0.022, 0.32, 0.01]} to={[0.11, 0.4, 0]} radius={0.0014} />
-    {[[0.035, 0.42, 0.02], [-0.064, 0.36, 0.01], [0.105, 0.393, 0]].map((position, i) => <mesh key={i} position={position as Vector3Tuple} scale={[0.025, 0.009, 0.012]} rotation={[0, 0, i - 0.2]}>
+    {[[0.035, 0.42, 0.02], [-0.064, 0.36, 0.01], [0.105, 0.393, 0]].map((position, i) => <mesh key={position.join(",")} position={position as Vector3Tuple} scale={[0.025, 0.009, 0.012]} rotation={[0, 0, i - 0.2]}>
       <sphereGeometry args={[1, 8, 6]} />
       <meshStandardMaterial color="#6d7959" roughness={1} />
     </mesh>)}
@@ -441,7 +441,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
     lastCommand.current = keyboard.sequence
     if (keyboard.action === 'home') { resetCamera(); return }
     const target = controls.current?.target ?? new THREE.Vector3(0, targetY, 0)
-    const spherical = new THREE.Spherical().setFromVector3(camera.position.clone().sub(target))
+    const spherical = new THREE.Spherical().setFromVector3(new THREE.Vector3().subVectors(camera.position, target))
     if (keyboard.action === 'left' || keyboard.action === 'right') spherical.theta += keyboard.action === 'left' ? -0.15 : 0.15
     else spherical.radius = THREE.MathUtils.clamp(spherical.radius * (keyboard.action === 'out' ? 1.1 : 0.9), 0.12, 4.5)
     camera.position.copy(new THREE.Vector3().setFromSpherical(spherical).add(target))

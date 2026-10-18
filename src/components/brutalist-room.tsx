@@ -21,7 +21,8 @@ function concreteTexture() {
     }
   }
   const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
   texture.colorSpace = THREE.SRGBColorSpace
   texture.magFilter = THREE.LinearFilter
   texture.minFilter = THREE.LinearMipmapLinearFilter

@@ -16,4 +16,4 @@ function Button({ className, variant, size, asChild = false, ...props }: React.C
   return <Comp data-slot="button" className={cn(buttonVariants({ variant, size, className }))} {...props} />
 }
 
-export { Button, buttonVariants }
+export { Button }

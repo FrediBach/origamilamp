@@ -17,10 +17,13 @@ Open the local address printed by Vite, normally `http://127.0.0.1:5173`. The de
 
 ```sh
 npm run typecheck
+npm run doctor
 npm test
 npm run build
 npm run preview
 ```
+
+`doctor` runs the installed React Doctor across the full project with telemetry disabled. Add `-- --verbose` for individual findings. Errors fail the command; warnings remain visible for follow-up.
 
 `build` runs TypeScript and produces the static site in `dist/`. `preview` serves that production build locally. A static host can serve `dist/`; custom-domain configuration is a separate deployment step.
 

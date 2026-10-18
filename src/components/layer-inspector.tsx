@@ -8,6 +8,7 @@ import './layer-inspector.css'
 const TPU = '#f1e4c9'
 const PLA = '#9caa90'
 const INK = '#635e50'
+const BLOCKING_CHECKS = new Set(['finite', 'dimensions', 'layers', 'contours', 'free-span', 'connectors', 'layer-height', 'values', 'cutout-range', 'cutout-thickness', 'cutout-sheets', 'cutout-web', 'text-range', 'text-content', 'text-sheets'])
 
 /** A true normal offset for the supported circular and rounded-rectangle contours. */
 function contourPath(p: LampParameters, offset: number) {
@@ -83,7 +84,7 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
   const [requestedLayer, setRequestedLayer] = useState(0)
   const d = deriveLamp(p)
   const errors = validateLamp(p).filter(item => item.status === 'error' &&
-    ['finite', 'dimensions', 'layers', 'contours', 'free-span', 'connectors', 'layer-height', 'values', 'cutout-range', 'cutout-thickness', 'cutout-sheets', 'cutout-web', 'text-range', 'text-content', 'text-sheets'].includes(item.id))
+    BLOCKING_CHECKS.has(item.id))
   const textLayout = useMemo(() => {
     if (!p.textEnabled || errors.length || p.shape === 'polygon') return []
     return Array.from({ length: d.sheets }, (_, sheet) => textPolygons(p, sheet))

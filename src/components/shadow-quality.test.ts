@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createShadowQualityController } from './shadow-quality'
+import { createShadowQualityController } from '../lib/shadow-quality'
 
 describe('demand-rendered shadow quality', () => {
   beforeEach(() => vi.useFakeTimers())

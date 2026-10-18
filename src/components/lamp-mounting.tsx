@@ -81,19 +81,27 @@ function Fastener({ point, bottom, top }: { point: THREE.Vector2; bottom: number
 }
 
 function SpringEye({ center, stemEnd, direction }: { center: THREE.Vector3; stemEnd: THREE.Vector3; direction: THREE.Vector2 }) {
-  const stem = stemEnd.clone().sub(center)
-  const eyeRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-direction.y, 0, direction.x))
   const radius = MOUNTING.springEyeRadius / 1000
-  // Start the shank at the eye's outer rim, leaving its centre open for a hook.
-  const stemStart = center.clone().addScaledVector(stem.clone().normalize(), radius)
-  const stemDirection = stemEnd.clone().sub(stemStart)
+  const { eyeRotation, stemPosition, stemRotation, stemLength } = useMemo(() => {
+    const stem = stemEnd.clone().sub(center)
+    const eyeRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-direction.y, 0, direction.x))
+    // Start the shank at the eye's outer rim, leaving its centre open for a hook.
+    const stemStart = center.clone().addScaledVector(stem.clone().normalize(), radius)
+    const stemDirection = stemEnd.clone().sub(stemStart)
+    return {
+      eyeRotation,
+      stemPosition: stemStart.clone().add(stemEnd).multiplyScalar(0.5),
+      stemRotation: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), stemDirection.clone().normalize()),
+      stemLength: stemDirection.length(),
+    }
+  }, [center, stemEnd, direction, radius])
   return <group>
     <mesh position={center} quaternion={eyeRotation} castShadow receiveShadow>
       <torusGeometry args={[radius, 0.0008, 8, 24]} />
       <meshStandardMaterial color="#b5b8b8" metalness={0.82} roughness={0.3} />
     </mesh>
-    <mesh position={stemStart.clone().add(stemEnd).multiplyScalar(0.5)} quaternion={new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), stemDirection.clone().normalize())} castShadow>
-      <cylinderGeometry args={[0.0012, 0.0012, stemDirection.length(), 10]} />
+    <mesh position={stemPosition} quaternion={stemRotation} castShadow>
+      <cylinderGeometry args={[0.0012, 0.0012, stemLength, 10]} />
       <meshStandardMaterial color="#a1a6a6" metalness={0.8} roughness={0.32} />
     </mesh>
   </group>
@@ -140,7 +148,12 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
         const outline = [start.clone().add(tangent), end.clone().add(tangent), end.clone().sub(tangent), start.clone().sub(tangent)]
         return {
           geometry: plateGeometry(outline, [], spring ? [screw] : [screw, frameScrew]),
-          spring: spring ? { ...spring, geometry: buildSpringGeometry(spring.start, spring.end) } : null,
+          spring: spring ? {
+            ...spring,
+            geometry: buildSpringGeometry(spring.start, spring.end),
+            clampStemEnd: new THREE.Vector3(spring.clampPoint.x, linkY, spring.clampPoint.y),
+            frameStemEnd: new THREE.Vector3(frameScrew.x, spring.end.y, frameScrew.y),
+          } : null,
           direction, screw, frameScrew,
         }
       })
@@ -164,7 +177,7 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
       {[-1, 1].map(sign => <mesh key={sign} geometry={assembly.jaw} position={[0, assembly.y + sign * (membrane / 2 + PLATE / 2), 0]} castShadow receiveShadow>
         <meshStandardMaterial color="#625f50" metalness={0.5} roughness={0.48} />
       </mesh>)}
-      {assembly.links.map((link, index) => <group key={index}>
+      {assembly.links.map(link => <group key={`${link.direction.x},${link.direction.y}`}>
         <mesh geometry={link.geometry} position={[0, assembly.linkY, 0]} castShadow receiveShadow>
           <meshStandardMaterial color="#625f50" metalness={0.5} roughness={0.48} />
         </mesh>
@@ -174,8 +187,8 @@ export function LampMounting({ parameters, frameWidth, frameDepth }: LampMountin
           top={assembly.y + membrane / 2 + PLATE + (assembly.upper ? PLATE : 0)}
         />
         {link.spring ? <>
-          <SpringEye center={link.spring.start} stemEnd={new THREE.Vector3(link.spring.clampPoint.x, assembly.linkY, link.spring.clampPoint.y)} direction={link.direction} />
-          <SpringEye center={link.spring.end} stemEnd={new THREE.Vector3(link.frameScrew.x, link.spring.end.y, link.frameScrew.y)} direction={link.direction} />
+          <SpringEye center={link.spring.start} stemEnd={link.spring.clampStemEnd} direction={link.direction} />
+          <SpringEye center={link.spring.end} stemEnd={link.spring.frameStemEnd} direction={link.direction} />
           <mesh geometry={link.spring.geometry} castShadow receiveShadow>
             <meshStandardMaterial color="#c1c5c8" metalness={0.86} roughness={0.25} />
           </mesh>
