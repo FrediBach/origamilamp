@@ -6,6 +6,8 @@ import { buildPatternLightMaps, OPTICAL_MAP_HEIGHT, patternLightingKey } from '@
 import { lampEmissionSamples, MAX_EMISSION_SAMPLES } from '@/lib/light-emission'
 import { deriveLighting } from '@/lib/lighting'
 import { luminousCenter } from '@/lib/shade-transmission'
+import { useShadowQuality } from '@/components/shadow-quality'
+import { applySoftShadows } from '@/lib/soft-shadows'
 
 type MaterialPatch = {
   compile: THREE.MeshStandardMaterial['onBeforeCompile']
@@ -16,6 +18,7 @@ type MaterialPatch = {
  * geometry shadow maps continue to block that light at opaque objects. */
 export function PatternLightProjection({ parameters, geometry }: { parameters: LampParameters; geometry: THREE.BufferGeometry }) {
   const { scene, invalidate } = useThree()
+  const shadowQuality = useShadowQuality()
   const key = patternLightingKey(parameters, false)
   const [settled, setSettled] = useState(() => ({ key, maps: buildPatternLightMaps(parameters, geometry) }))
   const maps = settled.maps
@@ -73,9 +76,10 @@ export function PatternLightProjection({ parameters, geometry }: { parameters: L
         const cacheKey = material.customProgramCacheKey
         const priorKey = cacheKey.call(material)
         patched.current.set(material, { compile, cacheKey })
-        material.customProgramCacheKey = () => priorKey + '|cutout-optical-projection-v3'
+        material.customProgramCacheKey = () => priorKey + '|cutout-optical-projection-v3|soft-shadows-v2'
         material.onBeforeCompile = (shader, renderer) => {
           compile.call(material, shader, renderer)
+          applySoftShadows(shader, shadowQuality)
           Object.assign(shader.uniforms, uniforms)
           shader.fragmentShader = `
             ${Array.from({ length: MAX_EMISSION_SAMPLES }, (_, index) => `uniform sampler2D cutoutProjection${index};`).join('\n')}

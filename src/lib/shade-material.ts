@@ -16,7 +16,7 @@ export function buildTextMaskAtlas(p: LampParameters) {
 }
 
 export function textShaderKey(p: LampParameters) {
-  return `text-vector-distance-v2-${textProjectionConfig(p).copies}`
+  return `text-vector-distance-v3-${textProjectionConfig(p).copies}`
 }
 
 /** Extra absorption relative to the unpigmented diffuser, in inverse mm.
@@ -105,10 +105,35 @@ export function applyTextTransmission(shader: WebGLProgramParametersWithUniforms
   `)
 }
 
+const SHADOW_LAYER_ANGLE = 2.399963229728653
+const shadowBayer8 = Array.from({ length: 64 }, (_, index) => {
+  let x = index % 8, y = Math.floor(index / 8), value = 0
+  for (const weight of [16, 4, 1]) {
+    const a = x % 2, b = y % 2
+    value += (2 * a + 3 * b - 4 * a * b) * weight
+    x = Math.floor(x / 2)
+    y = Math.floor(y / 2)
+  }
+  return (value + 0.5) / 64
+})
+
+/** CPU counterpart of the shadow-only coverage lattice, useful for checking
+ * mean transmission and independence of consecutive folded membranes. */
+export function shadowCoverageThreshold(x: number, y: number, sheet: number) {
+  sheet = Math.max(0, Math.floor(sheet + 0.5))
+  const angle = sheet * SHADOW_LAYER_ANGLE
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const px = Math.floor(x * cos - y * sin + sheet * 3)
+  const py = Math.floor(x * sin + y * cos + sheet * 5)
+  return shadowBayer8[((py % 8 + 8) % 8) * 8 + (px % 8 + 8) % 8]
+}
+
 /** Native depth/distance shadows preserve the projected glyph silhouette.
- * Object-space alpha hashing provides partial material transmission without
- * camera-dependent noise. Internal lamps already account for unpigmented TPU
- * in their optical maps; external lighting needs the base absorption here. */
+ * Ordered coverage avoids clumps from random alpha hashing. Its lattice lives
+ * in the light's shadow map, so viewer-camera motion cannot move it. Rotating
+ * consecutive sheet lattices prevents their transmission holes from aligning.
+ * Internal lamps already account for unpigmented TPU in their optical maps;
+ * external lighting needs the base absorption here. */
 export function applyTextShadow(shader: WebGLProgramParametersWithUniforms, p: LampParameters, atlas: ReturnType<typeof buildTextMaskAtlas>, external = false) {
   const thickness = p.tpuLayers * p.layerHeight
   const baseOpacity = external ? 1 - Math.exp(-1.1 * thickness) : 0
@@ -116,16 +141,38 @@ export function applyTextShadow(shader: WebGLProgramParametersWithUniforms, p: L
     ? 1 - Math.pow(TEXT_COLORS[p.textColor].transmission, thickness / 0.4)
     : 1 - Math.exp(-textPigmentAbsorption(p) * thickness)
   shader.uniforms.textShadowOpacities = { value: [baseOpacity, glyphOpacity] }
+  // Plain scenes retain the renderer's native five-tap shadow filter. Keep
+  // their original alpha hash instead of introducing an unfiltered lattice.
+  // Enabled but blank text still uses the ordered, progressively filtered path.
+  if (!p.textEnabled) {
+    const enableHash = '#ifndef USE_ALPHAHASH\n#define USE_ALPHAHASH\n#endif\n'
+    shader.vertexShader = enableHash + shader.vertexShader
+    shader.fragmentShader = enableHash + 'uniform vec2 textShadowOpacities;\n' + shader.fragmentShader
+    shader.fragmentShader = shader.fragmentShader.replace('#include <alphahash_fragment>', `
+      diffuseColor.a = mix(textShadowOpacities.x, textShadowOpacities.y, 0.0);
+      #include <alphahash_fragment>
+    `)
+    return
+  }
   const hasText = p.textEnabled && atlas !== null
   if (hasText) applyTextProjection(shader, p, atlas)
-  // Keep Three's native depth encoding and alpha-hash implementation. Defining
-  // this here also makes the helper safe when the caller omits alphaHash=true.
-  const enableHash = '#ifndef USE_ALPHAHASH\n#define USE_ALPHAHASH\n#endif\n'
-  shader.vertexShader = enableHash + shader.vertexShader
-  shader.fragmentShader = enableHash + 'uniform vec2 textShadowOpacities;\n' + shader.fragmentShader
+  shader.fragmentShader = `
+    uniform vec2 textShadowOpacities;
+    const float textShadowBayer[64] = float[64](${shadowBayer8.map(value => value.toFixed(7)).join(', ')});
+    float textShadowThreshold() {
+      float sheet = max(0.0, floor(vCutoutCoord.z + 0.5));
+      float angle = sheet * ${SHADOW_LAYER_ANGLE};
+      float c = cos(angle), s = sin(angle);
+      vec2 point = vec2(gl_FragCoord.x * c - gl_FragCoord.y * s,
+        gl_FragCoord.x * s + gl_FragCoord.y * c) + sheet * vec2(3.0, 5.0);
+      ivec2 cell = ivec2(mod(floor(point), 8.0));
+      return textShadowBayer[cell.y * 8 + cell.x];
+    }
+  ` + shader.fragmentShader
+  applyPrintCoordinates(shader)
   shader.fragmentShader = shader.fragmentShader.replace('#include <alphahash_fragment>', `
     diffuseColor.a = mix(textShadowOpacities.x, textShadowOpacities.y, ${hasText ? 'textCoverage()' : '0.0'});
-    #include <alphahash_fragment>
+    if (diffuseColor.a < textShadowThreshold()) discard;
   `)
 }
 

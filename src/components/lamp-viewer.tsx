@@ -21,6 +21,8 @@ import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
 import { BrutalistRoom } from '@/components/brutalist-room'
 import { WoodBox, useWoodMaterials } from '@/components/wood-box'
 import { LAMP_OUTPUT } from '@/components/use-lamp-flicker'
+import { ShadowQualityProvider, useShadowQuality } from '@/components/shadow-quality'
+import { applySoftShadows } from '@/lib/soft-shadows'
 
 export type PreviewMode = 'room' | 'studio' | 'print' | 'materials' | 'section'
 export type RoomStyle = 'tatami' | 'brutalist'
@@ -98,6 +100,7 @@ function Box({ position, size, color, map, rotation, castShadow = true }: {
 }
 
 function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters' | 'lightOn'> & { floorY: number }) {
+  const shadowQuality = useShadowQuality()
   const opticalKey = patternLightingKey(parameters)
   const geometryKey = patternLightingKey(parameters, false)
   const geometry = useMemo(() => buildExpandedGeometry(parameters), [geometryKey])
@@ -124,18 +127,16 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
     <mesh geometry={geometry} position={[0, mounting.lowerY / 1000, 0]} castShadow receiveShadow>
       <meshDistanceMaterial
-        key={`text-distance-${opticalKey}`}
+        key={`text-distance-${parameters.textEnabled ? 'ordered' : 'hashed'}-${opticalKey}`}
         attach="customDistanceMaterial"
-        alphaHash
         onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, false)}
-        customProgramCacheKey={() => `text-distance-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+        customProgramCacheKey={() => `text-distance-${parameters.textEnabled ? 'ordered' : 'hashed'}-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
       />
       <meshDepthMaterial
-        key={`text-depth-${opticalKey}`}
+        key={`text-depth-${parameters.textEnabled ? 'ordered' : 'hashed'}-${opticalKey}`}
         attach="customDepthMaterial"
-        alphaHash
         onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, true)}
-        customProgramCacheKey={() => `text-depth-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+        customProgramCacheKey={() => `text-depth-${parameters.textEnabled ? 'ordered' : 'hashed'}-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
       />
       <meshStandardMaterial
         key={`${opticalKey}-${thinGlow.uuid}`}
@@ -144,8 +145,9 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         onBeforeCompile={shader => {
           applyPatternTransmission(shader, parameters, thinGlow)
           if (textAtlas) applyTextTransmission(shader, parameters, textAtlas)
+          applySoftShadows(shader, shadowQuality)
         }}
-        customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v4' : 'shade-transmission-v4'}${textAtlas ? textShaderKey(parameters) : ''}`}
+        customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v4' : 'shade-transmission-v4'}${textAtlas ? textShaderKey(parameters) : ''}|soft-shadows-v2`}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}
@@ -462,7 +464,7 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
       {/* Both rooms share the ceiling fixture. The brutalist glazing adds
           crisper daylight shadows from its steel mullions. */}
       <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={6.5 * parameters.ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
-        castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
+        castShadow={parameters.ceilingLightIntensity > 0} shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
         shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
       <directionalLight position={[-1.5, 2, -2.2]} intensity={brutalist ? 0.7 : 0.4} color="#e9f0ff"
         castShadow={brutalist} shadow-mapSize={[1024, 1024]} shadow-camera-left={-3} shadow-camera-right={3}
@@ -541,7 +543,13 @@ export function LampViewer(props: LampViewerProps) {
         gl={{ antialias: true, alpha: true, localClippingEnabled: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.12 }}
         fallback={<ViewerFallback />}
       >
-        <Scene {...props} keyboard={keyboard} />
+        <ShadowQualityProvider
+          enabled={props.parameters.textEnabled && !isManufacturing}
+          sceneKey={JSON.stringify([props.parameters, props.mode, props.roomStyle, props.lightOn])}
+          animated={props.lightOn && props.parameters.lightIntensity > 0 && props.parameters.lightFlicker > 0}
+        >
+          <Scene {...props} keyboard={keyboard} />
+        </ShadowQualityProvider>
       </Canvas>
     </div>
   </ViewerBoundary>

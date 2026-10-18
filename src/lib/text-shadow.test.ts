@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { ShaderLib, Texture, type WebGLProgramParametersWithUniforms } from 'three'
 import { DEFAULT_PARAMETERS, type LampParameters } from './lamp'
-import { applyPatternTransmission, applyTextShadow, applyTextTransmission, buildTextMaskAtlas } from './shade-material'
+import { applyPatternTransmission, applyTextShadow, applyTextTransmission, buildTextMaskAtlas, shadowCoverageThreshold } from './shade-material'
 import { TEXT_COLORS } from './text-projection'
 
 const parameters = { ...DEFAULT_PARAMETERS, textEnabled: true, text: 'O', textRotation: 23, textAzimuth: 170 }
@@ -48,16 +48,17 @@ describe('native lettering shadows', () => {
     } finally { glow.dispose() }
   })
 
-  it.each(['depth', 'distance'] as const)('keeps the native %s encoding and hashes material coordinates before writing depth', kind => {
+  it.each(['depth', 'distance'] as const)('keeps the native %s encoding and applies ordered coverage before writing depth', kind => {
     const shader = materialShader(kind)
     const output = shader.fragmentShader.split('#include <alphahash_fragment>')[1]
     applyTextShadow(shader, parameters, atlas, kind === 'depth')
     expect(shader.fragmentShader.endsWith(output)).toBe(true)
     expect(shader.fragmentShader).toContain('#include <alphahash_pars_fragment>')
     expect(shader.fragmentShader).toContain('diffuseColor.a = mix(textShadowOpacities.x, textShadowOpacities.y, textCoverage());')
-    expect(shader.fragmentShader).toContain('#include <alphahash_fragment>')
-    expect(shader.vertexShader).toContain('#define USE_ALPHAHASH')
-    expect(shader.fragmentShader).not.toContain('gl_FragCoord')
+    expect(shader.fragmentShader).not.toContain('#include <alphahash_fragment>')
+    expect(shader.fragmentShader).toContain('if (diffuseColor.a < textShadowThreshold()) discard;')
+    expect(shader.fragmentShader).toContain('const float textShadowBayer[64]')
+    expect(shader.fragmentShader).toContain('gl_FragCoord.x * c - gl_FragCoord.y * s')
     expect(shader.fragmentShader).not.toContain('cutoutSettings')
   })
 
@@ -91,5 +92,50 @@ describe('native lettering shadows', () => {
         expect(shader.fragmentShader).toContain('mix(textShadowOpacities.x, textShadowOpacities.y, 0.0)')
       }
     }
+  })
+
+  it.each(['depth', 'distance'] as const)('preserves native alpha hashing for plain %s shadows', kind => {
+    const shader = materialShader(kind)
+    const output = shader.fragmentShader.split('#include <alphahash_fragment>')[1]
+    applyTextShadow(shader, { ...parameters, textEnabled: false }, null, kind === 'depth')
+    expect(shader.vertexShader).toContain('#define USE_ALPHAHASH')
+    expect(shader.fragmentShader).toContain('#define USE_ALPHAHASH')
+    expect(shader.fragmentShader).toContain('#include <alphahash_fragment>')
+    expect(shader.fragmentShader.endsWith(output)).toBe(true)
+    expect(shader.fragmentShader).not.toContain('textShadowBayer')
+    expect(shader.vertexShader).not.toContain('attribute vec3 cutoutCoord;')
+  })
+
+  it('keeps enabled blank lettering on the ordered filter path', () => {
+    const shader = materialShader('depth')
+    applyTextShadow(shader, { ...parameters, text: '' }, null, true)
+    expect(shader.fragmentShader).toContain('textShadowBayer')
+    expect(shader.fragmentShader).not.toContain('#include <alphahash_fragment>')
+    expect(shader.fragmentShader).not.toContain('#define USE_ALPHAHASH')
+    expect(shader.uniforms.textPigmentMap).toBeUndefined()
+  })
+
+  it('distributes all 64 coverage thresholds evenly in every unrotated tile', () => {
+    const thresholds = Array.from({ length: 64 }, (_, index) => shadowCoverageThreshold(index % 8 + 0.5, Math.floor(index / 8) + 0.5, 0)).sort((a, b) => a - b)
+    expect(thresholds).toEqual(Array.from({ length: 64 }, (_, index) => (index + 0.5) / 64))
+    for (const opacity of [0.2, 0.35, 0.55, 0.8, 0.98]) {
+      expect(Math.abs(thresholds.filter(value => value <= opacity).length / 64 - opacity)).toBeLessThanOrEqual(1 / 128)
+    }
+  })
+
+  it.each([1, 17, 35])('preserves cumulative transmission across three consecutive sheets starting at %i', firstSheet => {
+    // Integer translations alone would align or invert a half-opacity Bayer
+    // checkerboard, making two membranes transmit either 50% or 0%, not 25%.
+    const transmission = 0.5
+    const counts = [0, 0, 0]
+    const size = 192
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      let passes = true
+      for (let sheet = 0; sheet < 3; sheet++) {
+        passes = passes && shadowCoverageThreshold(x + 0.5, y + 0.5, firstSheet + sheet) > 1 - transmission
+        if (passes) counts[sheet]++
+      }
+    }
+    counts.forEach((count, layer) => expect(Math.abs(count / size ** 2 - transmission ** (layer + 1))).toBeLessThan(0.012))
   })
 })

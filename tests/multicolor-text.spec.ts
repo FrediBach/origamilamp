@@ -357,3 +357,169 @@ test('bulb letter shadows retain the O counter and change shape when replaced by
   expect(counter.h - counter.o, 'replacing O with H darkens the counter at the predicted center bar, beyond a global brightness change').toBeGreaterThan(8)
   expect(errors).toEqual([])
 })
+
+async function shadowInteriorNoise(page: Page, frames: Buffer[]) {
+  return page.evaluate(async encoded => {
+    const contexts = await Promise.all(encoded.map(async frame => {
+      const image = await createImageBitmap(new Blob([Uint8Array.from(atob(frame), character => character.charCodeAt(0))], { type: 'image/png' }))
+      const canvas = new OffscreenCanvas(image.width, image.height)
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0)
+      image.close()
+      return context
+    }))
+    // Only the receiver to the right of the frame. Matched plain images isolate
+    // attenuation; a blurred black reference identifies shadow interiors. Some
+    // floor texture and geometric variation remain in both colored shadows.
+    const imageWidth = contexts[0].canvas.width, imageHeight = contexts[0].canvas.height
+    const bounds = { x: Math.round(imageWidth * 0.57), y: Math.round(imageHeight * 0.70), width: Math.round(imageWidth * 0.16), height: Math.round(imageHeight * 0.20) }
+    const width = bounds.width, height = bounds.height
+    const pixels = contexts.map(context => context.getImageData(bounds.x, bounds.y, width, height).data)
+    const black = new Float64Array(width * height), beige = new Float64Array(width * height)
+    for (let i = 0; i < black.length; i++) {
+      const luminance = pixels.map(pixel => pixel[i * 4] * 0.2126 + pixel[i * 4 + 1] * 0.7152 + pixel[i * 4 + 2] * 0.0722)
+      black[i] = luminance[0] - luminance[1]
+      beige[i] = luminance[0] - luminance[2]
+    }
+    const blur = (values: Float64Array, radius: number) => {
+      const result = new Float64Array(values.length)
+      for (let y = radius; y < height - radius; y++) for (let x = radius; x < width - radius; x++) {
+        let sum = 0
+        for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) sum += values[(y + dy) * width + x + dx]
+        result[y * width + x] = sum / (2 * radius + 1) ** 2
+      }
+      return result
+    }
+    const blackMean = blur(black, 2), beigeMean = blur(beige, 2)
+    const residuals: number[] = []
+    let blackSignal = 0, beigeSignal = 0
+    let blackResidualSquares = 0, residualProducts = 0, beigeSpecificSquares = 0
+    for (let y = 8; y < height - 8; y++) for (let x = 8; x < width - 8; x++) {
+      let interior = true
+      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) if (blackMean[(y + dy) * width + x + dx] < 40) interior = false
+      if (!interior) continue
+      const i = y * width + x
+      const blackResidual = black[i] - blackMean[i], beigeResidual = beige[i] - beigeMean[i]
+      residuals.push(Math.abs(beigeResidual))
+      blackResidualSquares += blackResidual ** 2
+      residualProducts += blackResidual * beigeResidual
+      // Subtract shared variation at the local attenuation ratio so softened
+      // geometry and floor grain are not counted as beige-only stippling. Keep
+      // an independent absolute-noise cap so shared noise cannot be hidden.
+      beigeSpecificSquares += (beigeResidual - blackResidual * beigeMean[i] / blackMean[i]) ** 2
+      blackSignal += blackMean[i]
+      beigeSignal += beigeMean[i]
+    }
+    residuals.sort((a, b) => a - b)
+    const count = residuals.length
+    const beigeResidualSquares = residuals.reduce((sum, value) => sum + value * value, 0)
+    const highFrequencyRms = Math.sqrt(beigeResidualSquares / count)
+    return {
+      bounds, count, highFrequencyRms,
+      blackResidualRms: Math.sqrt(blackResidualSquares / count),
+      residualCorrelation: residualProducts / Math.sqrt(blackResidualSquares * beigeResidualSquares),
+      beigeSpecificRms: Math.sqrt(beigeSpecificSquares / count),
+      percentile95: residuals[Math.floor(count * 0.95)], blackSignal: blackSignal / count, beigeSignal: beigeSignal / count, normalizedNoise: highFrequencyRms / (blackSignal / count),
+    }
+  }, frames.map(frame => frame.toString('base64')))
+}
+
+test('partial-opacity lettering has smooth shadow interiors and responsive controls', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Print setup', exact: true }).click()
+  await setControl(page.getByRole('spinbutton', { name: 'TPU layers', exact: true }), '1')
+  await page.getByRole('tab', { name: 'Finish', exact: true }).click()
+  const enabled = page.getByRole('switch', { name: 'Multicolor text', exact: true })
+  await enabled.setChecked(true)
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill('H')
+  await page.getByRole('button', { name: 'One bulb', exact: true }).click()
+  await setControl(page.getByRole('spinbutton', { name: 'Bulb diameter (millimetres)', exact: true }), '20')
+  await setControl(page.getByRole('spinbutton', { name: 'Bulb height (percent)', exact: true }), '75')
+  await setControl(page.getByRole('spinbutton', { name: 'Ceiling light intensity (percent)', exact: true }), '0')
+  await setControl(page.getByRole('spinbutton', { name: 'Vertical placement (percent)', exact: true }), '35')
+  const canvas = page.locator('canvas')
+  const preview = page.getByRole('region', { name: /^Approximate expanded lamp 3D preview/ })
+  await preview.focus()
+  await preview.press('Home')
+  for (let step = 0; step < 12; step++) await preview.press('ArrowLeft')
+  for (let step = 0; step < 2; step++) await preview.press('-')
+  const frames: Buffer[] = []
+  for (const color of ['plain', 'Black', 'Beige']) {
+    await enabled.setChecked(color !== 'plain')
+    if (color !== 'plain') await page.getByRole('group', { name: 'Text color', exact: true }).getByRole('button', { name: color, exact: true }).click()
+    const frame = await settledFrame(canvas)
+    frames.push(frame)
+    await writeFile(testInfo.outputPath(`shadow-noise-${color.toLowerCase()}.png`), frame)
+  }
+  const noise = await shadowInteriorNoise(page, frames)
+  const placement = page.getByRole('spinbutton', { name: 'Vertical placement (percent)', exact: true })
+  await placement.evaluate(element => {
+    const input = element as HTMLInputElement & { frameLatencies: number[] }
+    input.frameLatencies = []
+    input.addEventListener('input', () => {
+      const start = performance.now()
+      requestAnimationFrame(() => requestAnimationFrame(() => input.frameLatencies.push(performance.now() - start)))
+    })
+  })
+  for (let step = 0; step < 5; step++) await placement.press('ArrowUp')
+  await expect(placement).toHaveValue('40')
+  await expect.poll(() => placement.evaluate(element => (element as HTMLInputElement & { frameLatencies: number[] }).frameLatencies.length)).toBeGreaterThanOrEqual(5)
+  const frameLatencies = await placement.evaluate(element => (element as HTMLInputElement & { frameLatencies: number[] }).frameLatencies)
+  await settledFrame(canvas)
+  await preview.evaluate(element => {
+    const region = element as HTMLElement & { frameLatencies: number[] }
+    region.frameLatencies = []
+    region.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowRight') return
+      const start = performance.now()
+      requestAnimationFrame(() => requestAnimationFrame(() => region.frameLatencies.push(performance.now() - start)))
+    })
+  })
+  await preview.focus()
+  for (let step = 0; step < 5; step++) await preview.press('ArrowRight')
+  await expect.poll(() => preview.evaluate(element => (element as HTMLElement & { frameLatencies: number[] }).frameLatencies.length)).toBeGreaterThanOrEqual(5)
+  const orbitFrameLatencies = await preview.evaluate(element => (element as HTMLElement & { frameLatencies: number[] }).frameLatencies)
+
+  // A short animated/steady cycle catches a quality scheduler that stops
+  // requesting frames while text-enabled flicker uses its capped sample count.
+  await preview.press('Home')
+  const brightness = async (frame: Buffer) => page.evaluate(async encoded => {
+    const image = await createImageBitmap(new Blob([Uint8Array.from(atob(encoded), character => character.charCodeAt(0))], { type: 'image/png' }))
+    const surface = new OffscreenCanvas(image.width, image.height)
+    const context = surface.getContext('2d')!
+    context.drawImage(image, 0, 0)
+    const pixels = context.getImageData(Math.round(image.width * 0.445), Math.round(image.height * 0.18), Math.round(image.width * 0.07), Math.round(image.height * 0.6)).data
+    image.close()
+    let sum = 0
+    for (let index = 0; index < pixels.length; index += 4) sum += pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722
+    return sum / (pixels.length / 4)
+  }, frame.toString('base64'))
+  const steadyBrightness = await brightness(await settledFrame(canvas))
+  const flicker = page.getByRole('spinbutton', { name: 'Light flicker (percent)', exact: true })
+  await setControl(flicker, '100')
+  const flickerBrightness: number[] = []
+  for (let sample = 0; sample < 5; sample++) {
+    await page.waitForTimeout(250)
+    flickerBrightness.push(await brightness(await canvas.screenshot()))
+  }
+  await setControl(flicker, '0')
+  const restored = await settledFrame(canvas)
+  const restoredBrightness = await brightness(restored)
+  const metrics = JSON.stringify({ noise, frameLatencies, orbitFrameLatencies, flicker: { steadyBrightness, frames: flickerBrightness, restoredBrightness } }, null, 2)
+  await writeFile(testInfo.outputPath('shadow-noise-metrics.json'), metrics)
+  await testInfo.attach('shadow-noise-metrics', { body: metrics, contentType: 'application/json' })
+  expect(noise.count, 'the measurement includes a substantial shadow interior').toBeGreaterThan(100)
+  expect(noise.beigeSignal, 'noise removal must preserve the visible shadow').toBeGreaterThan(8)
+  expect.soft(noise.beigeSpecificRms, 'partial-opacity shadows should not add visible stippling beyond shared geometry and floor texture').toBeLessThan(2)
+  expect.soft(noise.highFrequencyRms, 'the absolute residual also stays low, including noise shared with the black reference').toBeLessThan(3)
+  expect(noise.blackSignal - noise.beigeSignal, 'smoothing retains the lighter beige shadow').toBeGreaterThan(5)
+  expect(Math.max(...flickerBrightness) - Math.min(...flickerBrightness), 'flicker visibly animates with lettering and adaptive shadow quality').toBeGreaterThan(8)
+  expect(Math.abs(restoredBrightness - steadyBrightness), 'turning flicker off restores steady light').toBeLessThan(0.1)
+  await page.waitForTimeout(500)
+  expect(restored.equals(await canvas.screenshot()), 'idle refinement finishes and the light remains steady').toBe(true)
+  expect(errors).toEqual([])
+})
