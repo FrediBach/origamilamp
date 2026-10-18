@@ -41,7 +41,7 @@ export function textPrintCoordinates(p: LampParameters, x: number, y: number): {
   return { u: distance / lengths.reduce((sum, value) => sum + value, 0), inset: p.cornerRadius - radius, nx, ny }
 }
 
-export function textGlyphGeometry(p: LampParameters) { return boldTextGeometry(p.text, p.textSize) }
+export function textGlyphGeometry(p: Pick<LampParameters, 'text' | 'textSize'>) { return boldTextGeometry(p.text, p.textSize) }
 
 export function textProjectionConfig(p: LampParameters) {
   const { width, height } = textGlyphGeometry(p)

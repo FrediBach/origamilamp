@@ -2,6 +2,7 @@ import type { LampParameters } from './lamp'
 import { deriveMounting, MOUNTING } from './mounting'
 
 export interface PreviewLightSource {
+  id: 'led' | 'primary-bulb' | 'secondary-bulb'
   kind: 'led' | 'bulb'
   /** World coordinates and full hardware dimensions, in millimetres. */
   centerY: number
@@ -41,8 +42,12 @@ export function deriveLighting(p: LampParameters) {
   const diameter = effectiveLightDiameter(p)
   const height = p.lightSource === 'led' ? mount.displayHeight * 0.86 : diameter * 1.65
   const travel = Math.max(0, availableHeight - height)
-  const positions = p.lightSource === 'led' ? [50] : p.lightSource === 'bulb' ? [p.bulbHeight] : [p.bulbHeight, p.secondBulbHeight]
-  const sources: PreviewLightSource[] = positions.map(positionPercent => ({
+  const placements: Pick<PreviewLightSource, 'id' | 'positionPercent'>[] = p.lightSource === 'led'
+    ? [{ id: 'led', positionPercent: 50 }]
+    : [{ id: 'primary-bulb', positionPercent: p.bulbHeight }]
+  if (p.lightSource === 'two-bulbs') placements.push({ id: 'secondary-bulb', positionPercent: p.secondBulbHeight })
+  const sources: PreviewLightSource[] = placements.map(({ id, positionPercent }) => ({
+    id,
     kind: p.lightSource === 'led' ? 'led' : 'bulb',
     centerY: centerY + travel * (positionPercent / 100 - 0.5),
     diameter,

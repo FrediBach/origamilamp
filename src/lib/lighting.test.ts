@@ -94,7 +94,7 @@ describe('light appearance and placement', () => {
     const mount = deriveMounting(parameters)
     const light = deriveLighting(parameters)
     expect(light.sources).toHaveLength(1)
-    expect(light.sources[0]).toEqual({ kind: 'led', centerY: mount.lowerY + mount.displayHeight / 2, diameter: 32, height: mount.displayHeight * 0.86, positionPercent: 50 })
+    expect(light.sources[0]).toEqual({ id: 'led', kind: 'led', centerY: mount.lowerY + mount.displayHeight / 2, diameter: 32, height: mount.displayHeight * 0.86, positionPercent: 50 })
   })
 
   it('places each full-size bulb inside the shade and clear of the end-clamp plates at either travel limit', () => {
@@ -122,6 +122,17 @@ describe('light appearance and placement', () => {
     expect(moveSecond.sources[0]).toEqual(initial.sources[0])
     expect(moveSecond.sources[1].centerY).toBeLessThan(initial.sources[1].centerY)
     expect(deriveLighting({ ...p, secondBulbHeight: 10 }).bulbsOverlap).toBe(true)
+  })
+
+  it('retains bulb identities across crossing, coincident heights and source switches', () => {
+    const p: LampParameters = { ...DEFAULT_PARAMETERS, lightSource: 'two-bulbs', bulbHeight: 10, secondBulbHeight: 90 }
+    const ids = deriveLighting(p).sources.map(source => source.id)
+    expect(new Set(ids).size).toBe(2)
+    for (const heights of [{ bulbHeight: 90, secondBulbHeight: 10 }, { bulbHeight: 50, secondBulbHeight: 50 }]) {
+      expect(deriveLighting({ ...p, ...heights }).sources.map(source => source.id)).toEqual(ids)
+    }
+    expect(deriveLighting({ ...p, lightSource: 'bulb' }).sources[0].id).toBe(ids[0])
+    expect(deriveLighting({ ...p, lightSource: 'led' }).sources[0].id).not.toBe(ids[0])
   })
 
   it('keeps actual bulb hardware size when a compressed shade is too short', () => {

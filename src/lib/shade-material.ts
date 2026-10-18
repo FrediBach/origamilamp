@@ -10,7 +10,7 @@ export function textMaskKey(p: LampParameters) {
   return JSON.stringify([p.textEnabled, ...(p.textEnabled ? [p.text, p.textSize] : [])])
 }
 
-export function buildTextMaskAtlas(p: LampParameters) {
+export function buildTextMaskAtlas(p: Pick<LampParameters, 'textEnabled' | 'text' | 'textSize'>) {
   if (!p.textEnabled || !p.text.trim()) return null
   return buildGlyphDistanceField(textGlyphGeometry(p))
 }

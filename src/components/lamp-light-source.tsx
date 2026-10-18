@@ -4,7 +4,7 @@ import type { LampParameters } from '@/lib/lamp'
 import { deriveLighting, type PreviewLightSource } from '@/lib/lighting'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
-import { luminousCenter, pendantIndex, sampleShadeGlow } from '@/lib/shade-transmission'
+import { luminousCenter, pendantIndex, shadeGlowInputs, sampleShadeGlowInputs } from '@/lib/shade-transmission'
 import { LAMP_OUTPUT, useLampFlicker } from '@/components/use-lamp-flicker'
 
 type Lighting = ReturnType<typeof deriveLighting>
@@ -12,9 +12,13 @@ type Lighting = ReturnType<typeof deriveLighting>
 /** Thickness-dependent transmitted glow, separate from opaque surface shading. */
 export function useShadeGlow(parameters: LampParameters, lighting: Lighting, thin = false) {
   const layers = thin ? parameters.cutoutLayers : parameters.tpuLayers
-  const key = JSON.stringify([layers, parameters.layerHeight, parameters.width, parameters.depth, parameters.shape, parameters.bandWidth, lighting.shadeBottom, deriveMounting(parameters).displayHeight, lighting.sources])
+  const { thickness, transmission, spread, displayHeight, shadeBottom, sources } = shadeGlowInputs(parameters, lighting, layers)
+  const sourcesKey = JSON.stringify(sources)
   const texture = useMemo(() => {
-    const glow = sampleShadeGlow(parameters, lighting, 128, layers)
+    const glow = sampleShadeGlowInputs({
+      thickness, transmission, spread, displayHeight, shadeBottom,
+      sources: JSON.parse(sourcesKey) as PreviewLightSource[],
+    })
     const data = new Uint8Array(glow.length * 4)
     glow.forEach((brightness, row) => {
       const value = Math.round(255 * brightness)
@@ -24,7 +28,7 @@ export function useShadeGlow(parameters: LampParameters, lighting: Lighting, thi
     result.magFilter = result.minFilter = THREE.LinearFilter
     result.needsUpdate = true
     return result
-  }, [key])
+  }, [thickness, transmission, spread, displayHeight, shadeBottom, sourcesKey])
   useEffect(() => () => texture.dispose(), [texture])
   return texture
 }
@@ -85,7 +89,7 @@ export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial 
       <cylinderGeometry args={[0.0015, 0.0015, (mounting.minimumOpening + 8) / 1000, 12]} />
       <meshStandardMaterial color="#625c4b" roughness={0.7} metalness={0.3} />
     </mesh>}
-    {lighting.sources.map((source, index) => <group key={`${source.kind}-${index}`}>
+    {lighting.sources.map((source, index) => <group key={source.id}>
       {source.kind === 'led' ? <>
         <Support bottom={base.topY} top={source.centerY - source.height / 2} />
         <mesh position={[0, source.centerY / 1000, 0]} castShadow>

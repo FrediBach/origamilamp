@@ -34,10 +34,18 @@ export function deriveShadeTransmission(p: LampParameters) {
 /** Sample transmitted glow from bottom to top of the displayed shade.
  * Values remain below one without clipping overlapping sources into plateaus. */
 export function sampleShadeGlow(p: LampParameters, lighting: ReturnType<typeof deriveLighting>, samples = 128, membraneLayers = p.tpuLayers): number[] {
-  if (!Number.isInteger(samples) || samples < 2) throw new RangeError('Shade glow needs at least two samples.')
+  return sampleShadeGlowInputs(shadeGlowInputs(p, lighting, membraneLayers), samples)
+}
+
+/** Complete optical inputs: brightness, colour and room finishes do not affect this texture. */
+export function shadeGlowInputs(p: LampParameters, lighting: ReturnType<typeof deriveLighting>, membraneLayers = p.tpuLayers) {
   const { thickness, transmission, spread } = deriveShadeTransmission({ ...p, tpuLayers: membraneLayers })
-  const { displayHeight } = deriveMounting(p)
-  const pendant = pendantIndex(lighting.sources)
+  return { thickness, transmission, spread, displayHeight: deriveMounting(p).displayHeight, shadeBottom: lighting.shadeBottom, sources: lighting.sources }
+}
+
+export function sampleShadeGlowInputs({ thickness, transmission, spread, displayHeight, shadeBottom, sources }: ReturnType<typeof shadeGlowInputs>, samples = 128): number[] {
+  if (!Number.isInteger(samples) || samples < 2) throw new RangeError('Shade glow needs at least two samples.')
+  const pendant = pendantIndex(sources)
   const falloff = (y: number, center: number) => {
     const distanceRatio = (y - center) / spread
     const pathRatio = Math.sqrt(1 + distanceRatio ** 2)
@@ -45,9 +53,9 @@ export function sampleShadeGlow(p: LampParameters, lighting: ReturnType<typeof d
     return obliqueTransmission / (1 + distanceRatio ** 2)
   }
   return Array.from({ length: samples }, (_, row) => {
-    const y = lighting.shadeBottom + row / (samples - 1) * displayHeight
+    const y = shadeBottom + row / (samples - 1) * displayHeight
     let incident = 0
-    lighting.sources.forEach((source, index) => {
+    sources.forEach((source, index) => {
       if (source.kind === 'led') {
         // Spread the column's light along its length, with the same total
         // relative power as the previous preview approximation.

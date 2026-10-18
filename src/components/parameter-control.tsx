@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { Slider } from '@/components/ui/slider'
+import { committedParameterValue, liveParameterValue } from '@/lib/parameter-value'
 
 interface ParameterControlProps {
   label: string
@@ -13,10 +14,7 @@ interface ParameterControlProps {
   disabled?: boolean
 }
 
-export function ParameterControl({ label, value, min, max, step = 1, unit = 'mm', onChange, hint, disabled }: ParameterControlProps) {
-  const id = useId()
-  const [draft, setDraft] = useState<string | null>(null)
-  const skipBlurCommit = useRef(false)
+function useParameterBounds(value: number, min: number, max: number) {
   // Recipes can contain valid values beyond the studio's suggested range.
   // Retain an extended range while editing, so its scale does not move under
   // the thumb as an imported value is brought back toward the usual range.
@@ -29,14 +27,21 @@ export function ParameterControl({ label, value, min, max, step = 1, unit = 'mm'
     upper = Math.max(limitsChanged ? Math.max(min, max) : upper, value)
     setBounds({ min, max, lower, upper })
   }
-  const accessibleUnit = unit === 'mm' ? 'millimetres' : unit === '°' ? 'degrees' : unit === '%' ? 'percent' : unit === 'K' ? 'kelvin' : unit
+  return { lower, upper }
+}
+
+const ACCESSIBLE_UNITS: Record<string, string> = { mm: 'millimetres', '°': 'degrees', '%': 'percent', K: 'kelvin' }
+
+export function ParameterControl({ label, value, min, max, step = 1, unit = 'mm', onChange, hint, disabled }: ParameterControlProps) {
+  const id = useId()
+  const [draft, setDraft] = useState<string | null>(null)
+  const skipBlurCommit = useRef(false)
+  const { lower, upper } = useParameterBounds(value, min, max)
+  const accessibleUnit = ACCESSIBLE_UNITS[unit] ?? unit
   const accessibleName = `${label}${accessibleUnit ? ` (${accessibleUnit})` : ''}`
   const commit = () => {
-    if (draft !== null && draft.trim() !== '' && Number.isFinite(Number(draft))) {
-      const rounded = lower + Math.round((Number(draft) - lower) / step) * step
-      const next = Number(Math.min(upper, Math.max(lower, rounded)).toFixed(3))
-      if (next !== value) onChange(next)
-    }
+    const next = committedParameterValue(draft ?? '', lower, upper, step)
+    if (next !== null && next !== value) onChange(next)
     setDraft(null)
   }
   return <div className="parameter-control" data-disabled={disabled || undefined}>
@@ -47,9 +52,8 @@ export function ParameterControl({ label, value, min, max, step = 1, unit = 'mm'
           onChange={event => {
             const next = event.target.value
             setDraft(next)
-            const n = Number(next)
-            const steps = (n - lower) / step
-            if (next.trim() !== '' && Number.isFinite(n) && n >= lower && n <= upper && Math.abs(steps - Math.round(steps)) < 0.00001) onChange(n)
+            const applied = liveParameterValue(next, lower, upper, step)
+            if (applied !== null) onChange(applied)
           }} onBlur={() => {
             if (skipBlurCommit.current) { skipBlurCommit.current = false; return }
             commit()

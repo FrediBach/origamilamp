@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMETERS, type LampParameters, type LightSource } from './lamp'
 import { deriveLighting } from './lighting'
-import { deriveShadeTransmission, luminousCenter, pendantIndex, sampleShadeGlow } from './shade-transmission'
+import { deriveShadeTransmission, luminousCenter, pendantIndex, sampleShadeGlow, shadeGlowInputs } from './shade-transmission'
 
 const sample = (p: LampParameters, count = 129) => sampleShadeGlow(p, deriveLighting(p), count)
 const maximumIndex = (values: number[]) => values.indexOf(Math.max(...values))
@@ -83,5 +83,22 @@ describe('shade transmission', () => {
         })
       }
     }
+  })
+})
+
+describe('glow texture dependencies', () => {
+  const inputs = (p: LampParameters, layers = p.tpuLayers) => shadeGlowInputs(p, deriveLighting(p), layers)
+
+  it('reuses optical inputs when only power, warmth, pigment or wood changes', () => {
+    const p = { ...DEFAULT_PARAMETERS }
+    expect(inputs({ ...p, lightIntensity: 25, lightTemperature: 6500, lightFlicker: 50, textColor: 'brown', frameWood: 'walnut' })).toEqual(inputs(p))
+  })
+
+  it('changes optical inputs for bulb movement, geometry and thin-membrane thickness', () => {
+    const p: LampParameters = { ...DEFAULT_PARAMETERS, lightSource: 'bulb', bulbHeight: 20 }
+    expect(inputs({ ...p, bulbHeight: 80 })).not.toEqual(inputs(p))
+    expect(inputs({ ...p, width: p.width + 20, depth: p.depth + 20 })).not.toEqual(inputs(p))
+    expect(inputs(p, 1).thickness).toBe(p.layerHeight)
+    expect(inputs(p, 2).thickness).toBe(p.layerHeight * 2)
   })
 })

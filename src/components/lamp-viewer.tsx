@@ -11,7 +11,7 @@ import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geo
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
-import { applyPatternTransmission, applyTextTransmission, applyTextShadow, buildTextMaskAtlas, textMaskKey, textShaderKey } from '@/lib/shade-material'
+import { applyPatternTransmission, applyTextTransmission, applyTextShadow, buildTextMaskAtlas, textShaderKey } from '@/lib/shade-material'
 import { TEXT_COLORS } from '@/lib/text-projection'
 import { patternLightingKey } from '@/lib/pattern-lighting'
 import { PatternLightProjection } from '@/components/pattern-light-projection'
@@ -112,8 +112,8 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
   const thinGlow = useShadeGlow(parameters, lighting, true)
-  const pigmentKey = textMaskKey(parameters)
-  const textAtlas = useMemo(() => buildTextMaskAtlas(parameters), [pigmentKey])
+  const { textEnabled, text, textSize } = parameters
+  const textAtlas = useMemo(() => buildTextMaskAtlas({ textEnabled, text, textSize }), [textEnabled, text, textSize])
   useEffect(() => () => textAtlas?.texture.dispose(), [textAtlas])
   const patterned = cutoutProfile(parameters).enabled
   const shadeMaterial = useRef<THREE.MeshStandardMaterial>(null)

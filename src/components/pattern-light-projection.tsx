@@ -31,7 +31,7 @@ export function PatternLightProjection({ parameters, geometry }: { parameters: L
       setSettled({ key, maps: buildPatternLightMaps(parameters, geometry) })
     }, 150)
     return () => window.clearTimeout(timer)
-  }, [key, geometry])
+  }, [key, geometry, parameters, settled.key])
   const patched = useRef(new Map<THREE.MeshStandardMaterial, MaterialPatch>())
   const uniforms = useMemo(() => ({
     ...Object.fromEntries(Array.from({ length: MAX_EMISSION_SAMPLES }, (_, index) => [`cutoutProjection${index}`, { value: null as THREE.Texture | null }])),
