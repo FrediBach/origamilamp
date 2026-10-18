@@ -4,7 +4,7 @@ import { DEFAULT_PARAMETERS, type LampParameters } from './lamp'
 import { buildExpandedGeometry } from './preview-geometry'
 import { buildPatternLightMap, buildPatternLightMaps, createOpticalCaster, patternLightingKey, transmissionBefore } from './pattern-lighting'
 import { deriveLighting } from './lighting'
-import { applyPatternTransmission } from './shade-material'
+import { applyPatternTransmission, textMaskKey } from './shade-material'
 import { cutoutProfile } from './cutout-patterns'
 
 const pattern: LampParameters = {
@@ -291,4 +291,50 @@ describe('patterned light transport', () => {
     expect(buildPatternLightMaps(pattern, geometry)).toEqual([])
     geometry.dispose()
   })
+
+  it('casts pigment shadows on the printed front face and retains a softer beige transmission', () => {
+    const p: LampParameters = { ...pattern, cutoutPattern: 'none', textEnabled: true, text: 'I', textSize: 60, textVertical: 50 }
+    const geometry = buildExpandedGeometry(p)
+    const front = rayThroughPrintPoint(geometry, 3, 0.25, 0.5)
+    const back = rayThroughPrintPoint(geometry, 3, 0.75, 0.5)
+    const plain = createOpticalCaster({ ...p, textEnabled: false }, geometry)
+    const clearFront = plain.trace(front.origin, front.direction)[0]
+    const clearBack = plain.trace(back.origin, back.direction)[0]
+    const values: number[] = []
+    try {
+      for (const textColor of ['black', 'brown', 'beige'] as const) {
+        const caster = createOpticalCaster({ ...p, textColor }, geometry)
+        try {
+          const colored = caster.trace(front.origin, front.direction)[0]
+          values.push(colored.transmission)
+          expect(colored.thickness).toBe(clearFront.thickness)
+          expect(colored.transmission).toBeLessThan(clearFront.transmission * 0.1)
+          expect(caster.trace(back.origin, back.direction)[0].transmission).toBeCloseTo(clearBack.transmission, 8)
+          expect(transmissionBefore(caster.trace(front.origin, front.direction), 0.00005)).toBe(1)
+        } finally { caster.dispose() }
+      }
+      expect(values[0]).toBeLessThan(values[1])
+      expect(values[1]).toBeLessThan(values[2])
+    } finally { plain.dispose(); geometry.dispose() }
+  })
+
+  it('keeps pigment fixed on the folded material and moves its shadows with the projection', () => {
+    const p: LampParameters = { ...pattern, cutoutPattern: 'none', textEnabled: true, text: 'I', textSize: 60 }
+    for (const expansion of [15, 100]) {
+      const current = { ...p, expansion }
+      const geometry = buildExpandedGeometry(current)
+      const caster = createOpticalCaster(current, geometry)
+      const moved = createOpticalCaster({ ...current, textAzimuth: 180 }, geometry)
+      try {
+        const front = rayThroughPrintPoint(geometry, 3, 0.25, 0.5)
+        const back = rayThroughPrintPoint(geometry, 3, 0.75, 0.5)
+        expect(caster.trace(front.origin, front.direction)[0].transmission).toBeLessThan(moved.trace(front.origin, front.direction)[0].transmission * 0.1)
+        expect(moved.trace(back.origin, back.direction)[0].transmission).toBeLessThan(caster.trace(back.origin, back.direction)[0].transmission * 0.1)
+      } finally { caster.dispose(); moved.dispose(); geometry.dispose() }
+    }
+    expect(textMaskKey(p)).toBe(textMaskKey({ ...p, expansion: 10, textColor: 'beige', rotation: 90, lightIntensity: 0 }))
+    expect(patternLightingKey(p)).not.toBe(patternLightingKey({ ...p, textColor: 'beige' }))
+    expect(patternLightingKey(p)).not.toBe(patternLightingKey({ ...p, textHorizontal: 30 }))
+  })
+
 })

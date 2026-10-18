@@ -230,6 +230,19 @@ button svg { pointer-events: none; }
 .pattern-controls legend { margin-bottom: 14px; }
 .pattern-controls .panel-description { margin-bottom: 12px; }
 .pattern-description { color: #646856; font-size: 12px; line-height: 1.65; margin: 14px 0 18px; }
+.text-settings { margin-top: 20px; }
+.text-content-input { display: block; width: 100%; min-width: 0; margin-top: 9px; padding: 11px 12px; border: 1px solid #bfc4b2; border-radius: 3px; background: #fffdf7; color: #343a2e; font-size: 20px; font-weight: 800; letter-spacing: .04em; }
+.text-color-picker { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
+.text-color-picker legend { margin-bottom: 10px; }
+.text-color-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.text-color-option { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 7px; padding: 10px 4px; border: 1px solid #d6d8cb; border-radius: 3px; background: #ffffff35; font-size: 11px; color: #4a513d; cursor: pointer; }
+.text-color-option:hover { background: #e6e9dc; }
+.text-color-option.selected { border-color: #68714e; background: #e6e9dc; box-shadow: inset 0 0 0 1px #68714e; }
+.text-color-swatch { width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
+.text-print-note { padding-top: 5px; border-top: 1px solid #daddd1; }
+.text-wrap-fit { margin: -8px 0 18px; }
+.text-fit-button { margin-top: 7px; padding: 6px 9px; border: 1px solid #a7af96; border-radius: 3px; color: #465039; background: #f4f5ed; font-size: 11px; cursor: pointer; }
+.text-fit-button:hover { background: #e6e9dc; }
 .attachment-option { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 74px; padding: 10px 4px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; font-size: 11px; }
 .attachment-option.selected { background: #f4ede5; border-color: #bf7460; color: #a54330; }
 .attachment-option:hover { border-color: #b16a55; }

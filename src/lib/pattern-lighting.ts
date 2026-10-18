@@ -1,15 +1,20 @@
 import * as THREE from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import type { LampParameters } from './lamp'
-import { cutoutAt, cutoutProfile } from './cutout-patterns'
+import { cutoutAt, cutoutContourPoint, cutoutProfile } from './cutout-patterns'
 import { deriveLighting, type PreviewLightSource } from './lighting'
 import { deriveMounting } from './mounting'
 import { buildExpandedGeometry } from './preview-geometry'
-import { luminousCenter, pendantIndex } from './shade-transmission'
+import { luminousCenter } from './shade-transmission'
+import { lampEmissionSamples } from './light-emission'
+import { textAtPrintPoint } from './text-projection'
+import { textPigmentAbsorption } from './shade-material'
 
 // A finite optical-depth map, not an opaque shadow or an additive floor decal.
 // Ordinary point-light shadow maps still account for wood, clamps and furniture.
 export const OPTICAL_LAYERS = 8
+export const OPTICAL_MAP_WIDTH = 256
+export const OPTICAL_MAP_HEIGHT = 128
 const ATTENUATION_PER_MM = 1.1
 export type OpticalCrossing = { distance: number; transmission: number; thickness: number }
 
@@ -21,6 +26,7 @@ export function patternLightingKey(p: LampParameters) {
     p.twist, p.modulation, p.expansion, p.layerHeight, p.tpuLayers, p.separatorLayers,
     p.innerConnector, p.outerConnector, p.extrusionWidth, p.cutoutPattern,
     p.cutoutCount, p.cutoutSpacing, p.cutoutEvery, p.cutoutPhase, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
+    p.textEnabled, ...(p.textEnabled ? [p.text, p.textColor, p.textSize, p.textRotation, p.textAzimuth, p.textHorizontal, p.textVertical] : []),
     deriveLighting(p).sources,
   ])
 }
@@ -36,6 +42,7 @@ export function createOpticalCaster(p: LampParameters, geometry?: THREE.BufferGe
   const joinedSheet = mesh.getAttribute('cutoutJoin')
   const position = mesh.getAttribute('position')
   const profile = cutoutProfile(p)
+  const pigmentAbsorption = p.textEnabled ? textPigmentAbsorption(p) : 0
   const triangle = new THREE.Triangle()
   const barycentric = new THREE.Vector3()
   const nominal = new THREE.Vector3()
@@ -57,18 +64,25 @@ export function createOpticalCaster(p: LampParameters, geometry?: THREE.BufferGe
         indices.forEach((index, i) => nominal.addScaledVector(vertex.fromBufferAttribute(coord, index), barycentric.getComponent(i)))
         const sheet = Math.round(nominal.z)
         let thickness = cutoutAt(p, sheet, nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness
+        // Preserve the printed pigment while the material folds. Print Y is
+        // negative viewer Z; reversing it keeps the text and its shadows on
+        // the same face as the manufacturing export.
+        const printPoint = pigmentAbsorption ? cutoutContourPoint(p, nominal.x, nominal.y * p.bandWidth) : null
+        let pigmentThickness = printPoint && textAtPrintPoint(p, sheet, printPoint[0], -printPoint[1]) ? thickness : 0
         const adjacent = joinedSheet ? Math.round(joinedSheet.getX(indices[0])) : -1
         const terminal = sheet === 0 || sheet === p.pleats * 2 - 1
         // Terminal flanges share only their outer joining strip. Every other
         // joined triangle is already confined to its flat crease band.
         if (adjacent >= 0 && (!terminal || nominal.y <= p.outerConnector / p.bandWidth)) {
-          thickness += p.separatorLayers * p.layerHeight
-            + (cutoutAt(p, adjacent, nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness)
+          const neighbourThickness = cutoutAt(p, adjacent, nominal.x, nominal.y) ? profile.remainingThickness : profile.normalThickness
+          thickness += p.separatorLayers * p.layerHeight + neighbourThickness
+          if (printPoint && textAtPrintPoint(p, adjacent, printPoint[0], -printPoint[1])) pigmentThickness += neighbourThickness
         }
         triangle.getNormal(normal)
         // The finite thickness and strong scattering of TPU bound grazing paths.
         const path = thickness / Math.max(0.15, Math.abs(normal.dot(direction)))
-        crossings.push({ distance: hit.distance, transmission: Math.exp(-ATTENUATION_PER_MM * path), thickness })
+        const pigmentPath = pigmentThickness / Math.max(0.15, Math.abs(normal.dot(direction)))
+        crossings.push({ distance: hit.distance, transmission: Math.exp(-ATTENUATION_PER_MM * path - pigmentAbsorption * pigmentPath), thickness })
       }
       return crossings
     },
@@ -154,8 +168,8 @@ export function buildPatternLightMaps(p: LampParameters, geometry: THREE.BufferG
   if (!positions || positions.count < 3 || !Array.from(positions.array).every(Number.isFinite)) return []
   const { sources } = deriveLighting(p)
   if (sources.some(source => ![source.centerY, source.height, source.diameter].every(Number.isFinite))) return []
-  const pendant = pendantIndex(sources)
+  const samples = lampEmissionSamples(sources)
   const caster = createOpticalCaster(p, geometry)
-  try { return sources.map((source, index) => buildPatternLightMap(p, source, index === pendant, 192, 96, caster)) }
+  try { return samples.map(source => buildPatternLightMap(p, source, source.inverted, OPTICAL_MAP_WIDTH, OPTICAL_MAP_HEIGHT, caster)) }
   finally { caster.dispose() }
 }

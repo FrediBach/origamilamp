@@ -5,12 +5,14 @@ import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { patternSectionIntervals } from '@/lib/pattern-section'
+import { textSectionIntervals } from '@/lib/text-section'
 import { cutoutLayerRange, cutoutPhaseAt, cutoutProfile } from '@/lib/cutout-patterns'
 import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
-import { applyPatternTransmission } from '@/lib/shade-material'
+import { applyPatternTransmission, applyTextTransmission, buildTextMaskAtlas, textMaskKey, textShaderKey } from '@/lib/shade-material'
+import { TEXT_COLORS } from '@/lib/text-projection'
 import { patternLightingKey } from '@/lib/pattern-lighting'
 import { PatternLightProjection } from '@/components/pattern-light-projection'
 import { LampMounting } from '@/components/lamp-mounting'
@@ -106,6 +108,9 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
   const thinGlow = useShadeGlow(parameters, lighting, true)
+  const pigmentKey = textMaskKey(parameters)
+  const textAtlas = useMemo(() => buildTextMaskAtlas(parameters), [pigmentKey])
+  useEffect(() => () => textAtlas?.texture.dispose(), [textAtlas])
   const patterned = cutoutProfile(parameters).enabled
   const shadeMaterial = useRef<THREE.MeshStandardMaterial>(null)
   // Spring rails sit beyond both flanges to pull the bellows apart.
@@ -124,8 +129,11 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         key={`${opticalKey}-${thinGlow.uuid}`}
         ref={shadeMaterial}
         userData={{ isTPUDiffuser: true }}
-        onBeforeCompile={shader => applyPatternTransmission(shader, parameters, thinGlow)}
-        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v3' : 'shade-transmission-v3'}
+        onBeforeCompile={shader => {
+          applyPatternTransmission(shader, parameters, thinGlow)
+          if (textAtlas) applyTextTransmission(shader, parameters, textAtlas)
+        }}
+        customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v4' : 'shade-transmission-v4'}${textAtlas ? textShaderKey(parameters) : ''}`}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}
@@ -281,14 +289,23 @@ function JapaneseRoom() {
 /** Exact section at model Y=0. Each rectangle follows the same integer layer
  * boundaries and rim widths as the manufacturing body; these are cut faces. */
 function sectionSurfaces(parameters: LampParameters) {
-  const data: { tpu: number[]; pla: number[] } = { tpu: [], pla: [] }
+  const data: { tpu: number[]; pla: number[]; accent: number[] } = { tpu: [], pla: [], accent: [] }
   const outer = parameters.width / 2000
   const inner = outer - parameters.bandWidth / 1000
   const { sheets } = deriveLamp(parameters)
   const patternSections = new Map<string, [number, number][]>()
-  const directRect = (material: 'tpu' | 'pla', a: number, b: number, y1: number, y2: number) => {
+  let accentIntervals: [number, number][] = []
+  const addRect = (material: keyof typeof data, a: number, b: number, y1: number, y2: number) => {
     if (b - a < 1e-10 || y2 - y1 < 1e-10) return
     data[material].push(a, y1, 0.000002, b, y1, 0.000002, b, y2, 0.000002, a, y1, 0.000002, b, y2, 0.000002, a, y2, 0.000002)
+  }
+  const directRect = (material: 'tpu' | 'pla', a: number, b: number, y1: number, y2: number) => {
+    if (material === 'pla' || !accentIntervals.length) { addRect(material, a, b, y1, y2); return }
+    const edges = [a, b, ...accentIntervals.flat().filter(x => x > a && x < b)].sort((x, y) => x - y)
+    for (let index = 0; index < edges.length - 1; index++) {
+      const left = edges[index], right = edges[index + 1], center = (left + right) / 2
+      addRect(accentIntervals.some(([start, end]) => center >= start && center <= end) ? 'accent' : 'tpu', left, right, y1, y2)
+    }
   }
   const rect = (material: 'tpu' | 'pla', x1: number, x2: number, y1: number, y2: number) => {
     for (const sign of [-1, 1]) {
@@ -298,6 +315,7 @@ function sectionSurfaces(parameters: LampParameters) {
     }
   }
   for (let sheet = 0; sheet < sheets; sheet += 1) {
+    accentIntervals = parameters.textEnabled ? textSectionIntervals(parameters, sheet).map(([a, b]) => [a / 1000, b / 1000]) : []
     const layer = sheet * (parameters.tpuLayers + parameters.separatorLayers)
     const bottom = layer * parameters.layerHeight / 1000
     const top = (layer + parameters.tpuLayers) * parameters.layerHeight / 1000
@@ -339,7 +357,7 @@ function sectionSurfaces(parameters: LampParameters) {
     result.computeVertexNormals()
     return result
   }
-  return { tpu: geometry(data.tpu), pla: geometry(data.pla) }
+  return { tpu: geometry(data.tpu), pla: geometry(data.pla), accent: geometry(data.accent) }
 }
 
 function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; mode: PreviewMode }) {
@@ -350,9 +368,9 @@ function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; 
       return null
     }
   }, [parameters])
-  useEffect(() => () => { model?.tpu.dispose(); model?.pla.dispose() }, [model])
+  useEffect(() => () => { model?.tpu.dispose(); model?.pla.dispose(); model?.accent?.dispose() }, [model])
   const caps = useMemo(() => model && mode === 'section' ? sectionSurfaces(parameters) : null, [parameters, mode, model])
-  useEffect(() => () => { caps?.tpu.dispose(); caps?.pla.dispose() }, [caps])
+  useEffect(() => () => { caps?.tpu.dispose(); caps?.pla.dispose(); caps?.accent.dispose() }, [caps])
   const clip = useMemo(() => [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)], [])
   if (!model) return <Html center><div style={{ width: 240, padding: 18, textAlign: 'center', background: '#f8f6efee', color: '#625b4e', border: '1px solid #d9d4c6', borderRadius: 3, fontSize: 12, lineHeight: 1.6 }}>Resolve the geometry checks to inspect a printable model. Sculpted profiles are available in the appearance preview.</div></Html>
   return <>
@@ -360,6 +378,9 @@ function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; 
     <mesh geometry={model.tpu} castShadow receiveShadow>
       <meshStandardMaterial color="#f1e4c9" roughness={0.73} side={THREE.DoubleSide} clippingPlanes={mode === 'section' ? clip : undefined} clipShadows />
     </mesh>
+    {model.accent && <mesh geometry={model.accent} castShadow receiveShadow>
+      <meshStandardMaterial color={TEXT_COLORS[parameters.textColor].hex} roughness={0.8} side={THREE.DoubleSide} clippingPlanes={mode === 'section' ? clip : undefined} clipShadows />
+    </mesh>}
     {mode !== 'print' && <mesh geometry={model.pla} castShadow receiveShadow>
       <meshStandardMaterial color="#9caa90" roughness={0.9} side={THREE.DoubleSide} clippingPlanes={mode === 'section' ? clip : undefined} clipShadows />
     </mesh>}
@@ -367,6 +388,7 @@ function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; 
     {caps && <>
       <mesh geometry={caps.tpu}><meshStandardMaterial color="#f1e4c9" side={THREE.DoubleSide} roughness={0.9} /></mesh>
       <mesh geometry={caps.pla}><meshStandardMaterial color="#9caa90" side={THREE.DoubleSide} roughness={0.9} /></mesh>
+      <mesh geometry={caps.accent}><meshStandardMaterial color={TEXT_COLORS[parameters.textColor].hex} side={THREE.DoubleSide} roughness={0.9} /></mesh>
     </>}
   </>
 }

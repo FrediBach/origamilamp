@@ -5,9 +5,10 @@ import { buildManufacturingGeometry, type ManufacturingOptions } from './manufac
 import { deriveMounting, MOUNTING } from './mounting'
 import { WOOD_FINISHES } from './wood'
 import { cutoutProfile } from './cutout-patterns'
+import { TEXT_COLORS, textWrapMetrics } from './text-projection'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutSpacing', 'cutoutEvery', 'cutoutPhase', 'cutoutDepth', 'cutoutLayers'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutSpacing', 'cutoutEvery', 'cutoutPhase', 'cutoutDepth', 'cutoutLayers', 'textEnabled', 'text', 'textColor', 'textSize', 'textRotation', 'textAzimuth', 'textHorizontal', 'textVertical'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -42,7 +43,24 @@ export function serializeDesign(parameters: LampParameters): string {
       status: 'unvalidated-physical-prototype',
       firstLayerHeight: parameters.layerHeight,
       variableLayerHeight: false,
-      materials: { 'shade-tpu.stl': 'TPU — permanent diffuser', 'separators-pla.stl': 'PLA — remove every separator' },
+      materials: {
+        'shade-tpu.stl': 'TPU — permanent diffuser',
+        ...(parameters.textEnabled ? { 'shade-text-tpu.stl': `TPU — permanent ${TEXT_COLORS[parameters.textColor].name.toLowerCase()} lettering` } : {}),
+        'separators-pla.stl': 'PLA — remove every separator',
+      },
+      multicolorText: {
+        enabled: parameters.textEnabled, text: parameters.text, color: parameters.textColor,
+        letterHeightMillimetres: parameters.textSize, rotationDegrees: parameters.textRotation,
+        projectionAzimuthDegrees: parameters.textAzimuth, horizontalOffsetMillimetres: parameters.textHorizontal,
+        verticalPositionPercent: parameters.textVertical,
+        font: 'Helvetiker Bold', projection: 'continuous-outer-perimeter-arclength-wrap-at-target-deployed-height',
+        ...textWrapMetrics(parameters),
+        overflow: 'Text longer than one circumference continues around the shade; overlapping lettering merges into the same accent TPU.',
+        construction: 'complementary-TPU-volumes-in-existing-membrane-layers',
+        retainedBaseTPU: 'Both joining bands and both clamped terminal membranes stay in the base TPU color.',
+        assignment: 'Use compatible base and accent TPU plus removable PLA. Import all STL parts together and preserve their shared origin. Verify color-boundary adhesion on the calibration specimen.',
+        opticalPreview: 'Illustrative pigment-dependent attenuation, not measured transmission for a specific filament.',
+      },
       lightPattern: {
         shape: parameters.cutoutPattern,
         repeats: parameters.cutoutCount,
@@ -117,7 +135,7 @@ export function parseDesign(text: string): LampParameters {
     result[key] = value
   }
   const parameters = result as unknown as LampParameters
-  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height', 'cutout-range'])
+  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height', 'cutout-range', 'text-range'])
   const errors = validateLamp(parameters).filter(diagnostic => diagnostic.status === 'error' && scalarErrors.has(diagnostic.id))
   if (parameters.cornerRadius < 0) throw new Error('Corner radius cannot be negative.')
   if (errors.length) throw new Error(errors.map(error => error.title).join(' · '))
@@ -156,6 +174,20 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const p = options.calibration ? calibrationParameters(parameters) : parameters
   const geometry = buildManufacturingGeometry(parameters, options)
   const d = deriveLamp(p)
+  const textInstructions = p.textEnabled ? `Multicolor text: "${p.text}" in ${TEXT_COLORS[p.textColor].name.toLowerCase()} TPU.
+Assign shade-text-tpu.stl to the SECOND TPU color, using a TPU compatible with the base.
+The two TPU files are complementary volumes in the same membrane layers; this is
+not a raised overlay. Keep both joining bands and terminal clamp membranes in
+base TPU for uninterrupted folds and grips. Patterned PLA recesses retain their
+original geometry. Import all three files together; never auto-center or drop
+the accent part independently. Test color-boundary adhesion and folding strength.
+Wrapped Helvetiker Bold lettering: ${p.textSize} mm cap height, ${p.textRotation}° text rotation,
+${p.textAzimuth}° around the shade, ${p.textHorizontal} mm horizontal offset,
+${p.textVertical}% vertical placement. It is fixed to the target deployed height;
+preview expansion and viewing rotation do not move the printed lettering.
+Text follows true outer-perimeter distance continuously around corners and the
+back. Text exceeding one circumference wraps further; overlapping ink merges.`
+    : 'Multicolor text: disabled; one permanent TPU color.'
   const endMounting = endMountingEligibility(p)
   const incompatibleMount = endMounting.limitations.length > 0
   const frameWoodName = WOOD_FINISHES[p.frameWood].name
@@ -226,10 +258,10 @@ ${endMounting.limitations.map(limitation => `   ${limitation.detail}`).join('\n'
   const instructions = `ORIGAMI LAMP · ${options.calibration ? 'CALIBRATION SPECIMEN' : 'COMPRESSED SHADE'}
 origamilamp.app | millimetres | geometry recipe v1
 
-1. Import shade-tpu.stl and separators-pla.stl together as parts of ONE assembly.
+1. Import shade-tpu.stl${p.textEnabled ? ', shade-text-tpu.stl and ' : ' and '}separators-pla.stl together as parts of ONE assembly.
    Preserve their shared origin, transforms and relative Z positions. Do not
    independently drop each part to the build plate. STL does not encode units;
-   interpret both files as millimetres. Z is up; the TPU bottom rests at Z=0.
+   interpret all files as millimetres. Z is up; the TPU bottom rests at Z=0.
 2. Assign shade-tpu.stl to TPU and separators-pla.stl to removable PLA. A compatible
    multimaterial printer is required. Material-to-tool mapping is manual.
 3. Use a constant ${p.layerHeight} mm layer height, including the first layer:
@@ -260,16 +292,18 @@ ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removabl
 ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeight.toFixed(3)} mm compressed
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
 ${patternInstructions}
+${textInstructions}
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
 Attachment: ${p.attachment === 'springs' ? 'short metal springs, four at the top and four at the bottom' : 'bolted supports, four per end'} (separate hardware).
 Support frame wood: ${frameWoodName}. Base board wood: ${baseWoodName}.
 Configured optional box wood: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
-Display height, expansion, rotation, attachment, wood finishes, electronics box settings, light placement, warmth, flicker and lamp or ceiling intensity do not alter these print files.
+${p.textEnabled ? 'Target deployed height determines the text projection. Expansion' : 'Display height, expansion'}, viewing rotation, attachment, wood finishes, electronics box settings, light placement, warmth, flicker and lamp or ceiling intensity do not alter these print files.
 The included design.json records the specimen parameters and material recipe.
 `
   try {
     return zipSync({
       'shade-tpu.stl': geometryToSTL(geometry.tpu),
+      ...(geometry.accent ? { 'shade-text-tpu.stl': geometryToSTL(geometry.accent) } : {}),
       'separators-pla.stl': geometryToSTL(geometry.pla),
       'design.json': strToU8(serializeDesign(p)),
       'READ-ME.txt': strToU8(instructions),
@@ -277,6 +311,7 @@ The included design.json records the specimen parameters and material recipe.
   } finally {
     geometry.tpu.dispose()
     geometry.pla.dispose()
+    geometry.accent?.dispose()
   }
 }
 

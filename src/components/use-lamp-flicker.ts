@@ -1,10 +1,11 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { MeshStandardMaterial, PointLight } from 'three'
 import type { PreviewLightSource } from '@/lib/lighting'
 import { sampleLightFlicker } from '@/lib/light-flicker'
+import { lampEmissionSamples } from '@/lib/light-emission'
 
-export const LAMP_OUTPUT = { shade: 1.8, emitter: 1.65, led: 0.8, bulb: 0.6 } as const
+export const LAMP_OUTPUT = { shade: 1.8, emitter: 1.65, led: 12, bulb: 9 } as const
 
 /** One electrical flutter drives the sources, their cast light, and the
  * transmitted shade glow. Mutating uniforms avoids React renders, geometry
@@ -12,6 +13,7 @@ export const LAMP_OUTPUT = { shade: 1.8, emitter: 1.65, led: 0.8, bulb: 0.6 } as
 export function useLampFlicker(lightOn: boolean, intensity: number, amount: number, sources: PreviewLightSource[], shade: RefObject<MeshStandardMaterial | null>) {
   const emitters = useRef<Array<MeshStandardMaterial | null>>([])
   const points = useRef<Array<PointLight | null>>([])
+  const samples = useMemo(() => lampEmissionSamples(sources), [sources])
   const elapsed = useRef(0)
   const resume = useRef(true)
   const visible = useRef(true)
@@ -55,14 +57,16 @@ export function useLampFlicker(lightOn: boolean, intensity: number, amount: numb
     if (shade.current) shade.current.emissiveIntensity = LAMP_OUTPUT.shade * brightness
     for (let index = 0; index < sources.length; index++) {
       const emitter = emitters.current[index]
-      const point = points.current[index]
       if (emitter) emitter.emissiveIntensity = LAMP_OUTPUT.emitter * brightness
-      if (point) point.intensity = LAMP_OUTPUT[sources[index].kind] * brightness
+    }
+    for (let index = 0; index < samples.length; index++) {
+      const point = points.current[index]
+      if (point) point.intensity = LAMP_OUTPUT[samples[index].kind] * samples[index].powerShare * brightness
     }
     // Leave the canvas idle for steady/off light, hidden tabs, and previews
     // outside the viewport. The hook unmounts in manufacturing views.
     if (active) invalidate()
   })
 
-  return { emitters, points }
+  return { emitters, points, samples }
 }

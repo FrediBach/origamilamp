@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { LampParameters } from '@/lib/lamp'
-import { buildPatternLightMaps, patternLightingKey } from '@/lib/pattern-lighting'
+import { buildPatternLightMaps, OPTICAL_MAP_HEIGHT, patternLightingKey } from '@/lib/pattern-lighting'
+import { lampEmissionSamples, MAX_EMISSION_SAMPLES } from '@/lib/light-emission'
+import { deriveLighting } from '@/lib/lighting'
+import { luminousCenter } from '@/lib/shade-transmission'
 
 type MaterialPatch = {
   compile: THREE.MeshStandardMaterial['onBeforeCompile']
@@ -14,17 +17,32 @@ type MaterialPatch = {
 export function PatternLightProjection({ parameters, geometry }: { parameters: LampParameters; geometry: THREE.BufferGeometry }) {
   const { scene, invalidate } = useThree()
   const key = patternLightingKey(parameters)
-  const maps = useMemo(() => buildPatternLightMaps(parameters, geometry), [key])
+  const [settled, setSettled] = useState(() => ({ key, maps: buildPatternLightMaps(parameters, geometry) }))
+  const maps = settled.maps
+  useEffect(() => {
+    if (settled.key === key) return
+    // Let a slider or text edit finish before tracing the extended emitter.
+    // The shade's vector projection updates immediately; the last complete
+    // optical map and its source coordinates remain paired while dragging.
+    const timer = window.setTimeout(() => {
+      setSettled({ key, maps: buildPatternLightMaps(parameters, geometry) })
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [key, geometry])
   const patched = useRef(new Map<THREE.MeshStandardMaterial, MaterialPatch>())
   const uniforms = useMemo(() => ({
-    cutoutProjection0: { value: null as THREE.Texture | null },
-    cutoutProjection1: { value: null as THREE.Texture | null },
-    cutoutSourceY: { value: new THREE.Vector2(-1000, -1000) },
+    ...Object.fromEntries(Array.from({ length: MAX_EMISSION_SAMPLES }, (_, index) => [`cutoutProjection${index}`, { value: null as THREE.Texture | null }])),
+    cutoutSourceY: { value: new Float32Array(MAX_EMISSION_SAMPLES).fill(-1000) },
+    cutoutCurrentSourceY: { value: new Float32Array(MAX_EMISSION_SAMPLES).fill(-1000) },
     cutoutRotation: { value: 0 },
   }), [])
-  uniforms.cutoutProjection0.value = maps[0]?.texture ?? null
-  uniforms.cutoutProjection1.value = maps[1]?.texture ?? maps[0]?.texture ?? null
-  uniforms.cutoutSourceY.value.set(maps[0]?.sourceY ?? -1000, maps[1]?.sourceY ?? -1000)
+  const currentSources = lampEmissionSamples(deriveLighting(parameters).sources)
+  for (let index = 0; index < MAX_EMISSION_SAMPLES; index++) {
+    (uniforms as Record<string, { value: unknown }>)[`cutoutProjection${index}`].value = maps[index]?.texture ?? maps[0]?.texture ?? null
+    uniforms.cutoutSourceY.value[index] = (maps[index] ?? maps[0])?.sourceY ?? -1000
+    const current = currentSources[index]
+    uniforms.cutoutCurrentSourceY.value[index] = current ? luminousCenter(current, current.inverted) / 1000 : -1000
+  }
   uniforms.cutoutRotation.value = parameters.rotation * Math.PI / 180
 
   useEffect(() => {
@@ -55,20 +73,20 @@ export function PatternLightProjection({ parameters, geometry }: { parameters: L
         const cacheKey = material.customProgramCacheKey
         const priorKey = cacheKey.call(material)
         patched.current.set(material, { compile, cacheKey })
-        material.customProgramCacheKey = () => priorKey + '|cutout-optical-projection-v1'
+        material.customProgramCacheKey = () => priorKey + '|cutout-optical-projection-v3'
         material.onBeforeCompile = (shader, renderer) => {
           compile.call(material, shader, renderer)
           Object.assign(shader.uniforms, uniforms)
           shader.fragmentShader = `
-            uniform sampler2D cutoutProjection0;
-            uniform sampler2D cutoutProjection1;
-            uniform vec2 cutoutSourceY;
+            ${Array.from({ length: MAX_EMISSION_SAMPLES }, (_, index) => `uniform sampler2D cutoutProjection${index};`).join('\n')}
+            uniform float cutoutSourceY[${MAX_EMISSION_SAMPLES}];
+            uniform float cutoutCurrentSourceY[${MAX_EMISSION_SAMPLES}];
             uniform float cutoutRotation;
             float shadeRayTransmission(sampler2D opticalMap, vec3 direction, float distanceToLight) {
               float angle = atan(direction.z, direction.x) + cutoutRotation;
               vec2 uv = vec2(fract(angle / 6.28318530718 + 0.5), asin(clamp(direction.y, -1.0, 1.0)) / 3.14159265359 + 0.5);
               // Clamp latitude inside each packed strip to prevent cross-talk.
-              uv.y = clamp(uv.y, 0.5 / 96.0, 1.0 - 0.5 / 96.0);
+              uv.y = clamp(uv.y, 0.5 / ${OPTICAL_MAP_HEIGHT}.0, 1.0 - 0.5 / ${OPTICAL_MAP_HEIGHT}.0);
               float transmission = 1.0;
               for (int band = 0; band < 4; band++) {
                 vec4 crossing = texture2D(opticalMap, vec2(uv.x, (uv.y + float(band)) / 4.0));
@@ -82,15 +100,15 @@ export function PatternLightProjection({ parameters, geometry }: { parameters: L
             THREE.ShaderChunk.lights_fragment_begin.replace('getPointLightInfo( pointLight, geometryPosition, directLight );', `
               getPointLightInfo( pointLight, geometryPosition, directLight );
               {
-              vec3 opticalDirection = inverseTransformDirection(geometryPosition - pointLight.position, viewMatrix);
-              float opticalDistance = length(geometryPosition - pointLight.position);
-              vec3 opticalSource0 = (viewMatrix * vec4(0.0, cutoutSourceY.x, 0.0, 1.0)).xyz;
-              vec3 opticalSource1 = (viewMatrix * vec4(0.0, cutoutSourceY.y, 0.0, 1.0)).xyz;
-              if (distance(pointLight.position, opticalSource0) < 0.0001) {
-                directLight.color *= shadeRayTransmission(cutoutProjection0, opticalDirection, opticalDistance);
-              } else if (distance(pointLight.position, opticalSource1) < 0.0001) {
-                directLight.color *= shadeRayTransmission(cutoutProjection1, opticalDirection, opticalDistance);
-              }
+              ${Array.from({ length: MAX_EMISSION_SAMPLES }, (_, index) => `
+                ${index ? 'else ' : ''}if (distance(pointLight.position, (viewMatrix * vec4(0.0, cutoutCurrentSourceY[${index}], 0.0, 1.0)).xyz) < 0.0001) {
+                  vec3 opticalSource = (viewMatrix * vec4(0.0, cutoutSourceY[${index}], 0.0, 1.0)).xyz;
+                  vec3 opticalRay = geometryPosition - opticalSource;
+                  vec3 opticalDirection = inverseTransformDirection(opticalRay, viewMatrix);
+                  float opticalDistance = length(opticalRay);
+                  directLight.color *= shadeRayTransmission(cutoutProjection${index}, opticalDirection, opticalDistance);
+                }
+              `).join('\n')}
               }
             `))
         }

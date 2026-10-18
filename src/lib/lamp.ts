@@ -7,6 +7,7 @@ export type Shape = 'rounded-rectangle' | 'circle' | 'polygon'
 export type LightSource = 'led' | 'bulb' | 'two-bulbs'
 export type Attachment = 'bolted' | 'springs'
 export type CutoutPattern = 'none' | 'triangles' | 'half-circles' | 'rectangles'
+export type TextColor = 'black' | 'brown' | 'beige'
 
 export interface LampParameters {
   shape: Shape
@@ -30,6 +31,14 @@ export interface LampParameters {
   cutoutPhase: number
   cutoutDepth: number
   cutoutLayers: number
+  textEnabled: boolean
+  text: string
+  textColor: TextColor
+  textSize: number
+  textRotation: number
+  textAzimuth: number
+  textHorizontal: number
+  textVertical: number
   innerConnector: number
   outerConnector: number
   extrusionWidth: number
@@ -70,6 +79,8 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   twist: 0, modulation: 0, expansion: 100,
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
   cutoutPattern: 'none', cutoutCount: 12, cutoutSpacing: 30, cutoutEvery: 1, cutoutPhase: 0, cutoutDepth: 55, cutoutLayers: 1,
+  textEnabled: false, text: 'HI', textColor: 'black', textSize: 100,
+  textRotation: 0, textAzimuth: 0, textHorizontal: 0, textVertical: 50,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
   lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightIntensity: 100, lightTemperature: 2700, lightFlicker: 0,
@@ -81,7 +92,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   rotation: 0, material: 'ivory',
 }
 
-/** Nominal manufacturing arithmetic. Expansion and target height never change print geometry. */
+/** Nominal layer arithmetic. Text may change the color partition, but never these dimensions. */
 export function deriveLamp(p: LampParameters) {
   const sheets = 2 * p.pleats
   const separators = sheets - 1
@@ -118,6 +129,19 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
   }
   if (!['circle', 'rounded-rectangle', 'polygon'].includes(p.shape) || !['ivory', 'natural', 'white'].includes(p.material) || !['led', 'bulb', 'two-bulbs'].includes(p.lightSource) || !['bolted', 'springs'].includes(p.attachment) || !WOOD_SPECIES.includes(p.frameWood) || (p.boxWood !== 'match-frame' && !WOOD_SPECIES.includes(p.boxWood)) || typeof p.electronicsBox !== 'boolean') add('values', 'error', 'Unsupported design value', 'Choose a supported shape, material appearance, wood finish, light source, attachment and electronics box setting.')
   if (typeof p.electronicsBoxHeight !== 'number' || p.electronicsBoxHeight < 20 || p.electronicsBoxHeight > 120) add('base-range', 'error', 'Electronics box height outside the supported range', 'Use 20–120 mm of usable internal height, including when the electronics box is disabled.')
+  if (typeof p.textEnabled !== 'boolean' || typeof p.text !== 'string' || p.text.length > 24 || !/^[A-Z0-9 .!?-]*$/.test(p.text)
+    || !['black', 'brown', 'beige'].includes(p.textColor)
+    || typeof p.textSize !== 'number' || p.textSize < 40 || p.textSize > 300
+    || typeof p.textRotation !== 'number' || Math.abs(p.textRotation) > 180
+    || typeof p.textAzimuth !== 'number' || Math.abs(p.textAzimuth) > 180
+    || typeof p.textHorizontal !== 'number' || Math.abs(p.textHorizontal) > 150
+    || typeof p.textVertical !== 'number' || p.textVertical < 0 || p.textVertical > 100) {
+    add('text-range', 'error', 'Multicolor text setting out of range', 'Use up to 24 capital letters, digits, spaces or . ! ? -, black/brown/beige TPU, 40–300 mm letters, ±180° rotation and direction, ±150 mm horizontal offset and 0–100% vertical placement.')
+  } else if (p.textEnabled) {
+    if (!p.text.trim()) add('text-content', 'error', 'Enter a little text', 'Add at least one letter, number or punctuation mark, or turn multicolor text off.')
+    else if (p.pleats < 2) add('text-sheets', 'error', 'Lettering needs active folds', 'Use at least two full pleats. The terminal membranes and fold joins keep the base TPU color.')
+    else add('text-materials', 'warning', 'Two TPU colors need a bond test', 'Use compatible base and accent TPU with removable PLA: three material assignments. Heavy letter outlines share the membrane layers. Check the color boundaries and folded strength on the calibration print.')
+  }
   if (!['none', 'triangles', 'half-circles', 'rectangles'].includes(p.cutoutPattern)
     || !Number.isInteger(p.cutoutCount) || p.cutoutCount < 4 || p.cutoutCount > 32
     || typeof p.cutoutSpacing !== 'number' || p.cutoutSpacing < 5 || p.cutoutSpacing > 80

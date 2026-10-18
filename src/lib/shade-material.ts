@@ -1,6 +1,85 @@
-import { ShaderChunk, type Texture, type WebGLProgramParametersWithUniforms } from 'three'
+import { Color, type Texture, type WebGLProgramParametersWithUniforms, ShaderChunk } from 'three'
 import type { LampParameters } from './lamp'
 import { cutoutProfile } from './cutout-patterns'
+import { TEXT_COLORS, textGlyphGeometry, textProjectionConfig } from './text-projection'
+import { buildGlyphDistanceField } from './text-distance-field'
+
+/** Glyph outlines alone determine the distance field. Projection, material,
+ * folds, light and camera settings reuse that same continuous text texture. */
+export function textMaskKey(p: LampParameters) {
+  return JSON.stringify([p.textEnabled, ...(p.textEnabled ? [p.text, p.textSize] : [])])
+}
+
+export function buildTextMaskAtlas(p: LampParameters) {
+  if (!p.textEnabled || !p.text.trim()) return null
+  return buildGlyphDistanceField(textGlyphGeometry(p))
+}
+
+export function textShaderKey(p: LampParameters) {
+  return `text-vector-distance-v1-${textProjectionConfig(p).copies}`
+}
+
+/** Extra absorption relative to the unpigmented diffuser, in inverse mm.
+ * Palette transmission is an appearance estimate for a 0.4 mm membrane. */
+export function textPigmentAbsorption(p: LampParameters) {
+  return Math.max(0, -Math.log(TEXT_COLORS[p.textColor].transmission) / 0.4 - 1.1)
+}
+
+export function applyTextTransmission(shader: WebGLProgramParametersWithUniforms, p: LampParameters, atlas: NonNullable<ReturnType<typeof buildTextMaskAtlas>>) {
+  const projection = textProjectionConfig(p)
+  // A reflected rounded rectangle starts at the other end of its right-hand
+  // straight, so its print-coordinate seam differs from a reflected circle.
+  const reflection = p.shape === 'rounded-rectangle' ? 1 - (p.depth - 2 * p.cornerRadius) / projection.perimeter : 0
+  shader.uniforms.textPigmentMap = { value: atlas.texture }
+  shader.uniforms.textPigmentBounds = { value: [p.outerConnector / p.bandWidth, 1 - p.innerConnector / p.bandWidth] }
+  shader.uniforms.textPigmentColor = { value: new Color(TEXT_COLORS[p.textColor].hex) }
+  shader.uniforms.textPigmentAbsorption = { value: textPigmentAbsorption(p) }
+  shader.uniforms.textGlyphTexture = { value: [atlas.scale, atlas.padding, atlas.width, atlas.height] }
+  shader.uniforms.textProjection = { value: [projection.perimeter, projection.centerU, projection.horizontalOffset, projection.verticalCenter] }
+  shader.uniforms.textGlyphRotation = { value: [projection.cos, projection.sin, projection.width / 2, projection.height / 2] }
+  shader.uniforms.textSheetProjection = { value: [projection.rise, p.outerConnector, projection.span, reflection] }
+  shader.fragmentShader = `
+    uniform sampler2D textPigmentMap;
+    uniform vec2 textPigmentBounds;
+    uniform vec3 textPigmentColor;
+    uniform float textPigmentAbsorption;
+    uniform vec4 textGlyphTexture;
+    uniform vec4 textProjection;
+    uniform vec4 textGlyphRotation;
+    uniform vec4 textSheetProjection;
+    float glyphCoverage(vec2 point) {
+      vec2 uv = (point * textGlyphTexture.x + textGlyphTexture.y) / textGlyphTexture.zw;
+      float distanceToEdge = (texture2D(textPigmentMap, uv).r - 0.5) * 16.0;
+      float aa = max(fwidth(distanceToEdge), 0.6);
+      return smoothstep(-aa, aa, distanceToEdge);
+    }
+  ` + shader.fragmentShader
+  shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+    #include <map_fragment>
+    float pigmentCoverage = 0.0;
+    float pigmentSheet = floor(vCutoutCoord.z + 0.5);
+    if (pigmentSheet > 0.5 && pigmentSheet < cutoutSettings.w - 0.5) {
+      float foldFraction = clamp((vCutoutCoord.y * cutoutSettings.z - textSheetProjection.y) / textSheetProjection.z, 0.0, 1.0);
+      float pigmentHeight = (pigmentSheet - 1.0 + mix(1.0 - foldFraction, foldFraction, mod(pigmentSheet, 2.0))) * textSheetProjection.x;
+      float printU = fract(textSheetProjection.w - vCutoutCoord.x);
+      float horizontal = (printU - textProjection.y) * textProjection.x - textProjection.z;
+      float vertical = pigmentHeight - textProjection.w;
+      for (int copy = -${projection.copies}; copy <= ${projection.copies}; copy++) {
+        float s = horizontal + float(copy) * textProjection.x;
+        vec2 glyphPoint = vec2(s * textGlyphRotation.x + vertical * textGlyphRotation.y,
+          -s * textGlyphRotation.y + vertical * textGlyphRotation.x) + textGlyphRotation.zw;
+        pigmentCoverage = max(pigmentCoverage, glyphCoverage(glyphPoint));
+      }
+      pigmentCoverage *= step(textPigmentBounds.x, vCutoutCoord.y) * step(vCutoutCoord.y, textPigmentBounds.y);
+    }
+    diffuseColor.rgb = mix(diffuseColor.rgb, textPigmentColor, pigmentCoverage);
+  `)
+  shader.fragmentShader = shader.fragmentShader.replace('totalEmissiveRadiance *= membraneGlow;', `
+    float pigmentThickness = mix(cutoutProfile.z, cutoutProfile.w, cutoutMask(vCutoutCoord.z));
+    membraneGlow *= mix(1.0, exp(-textPigmentAbsorption * pigmentThickness), pigmentCoverage);
+    totalEmissiveRadiance *= membraneGlow;
+  `)
+}
 
 /** Internal light is scattered through the diffuser by its smooth glow map.
  * Also applying opaque point-light shading makes nearly horizontal folds flip

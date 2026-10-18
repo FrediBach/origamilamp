@@ -105,7 +105,7 @@ export function buildExpandedGeometry(parameters: LampParameters) {
 
 /** Contour points are millimetres in the viewer's XZ plane. */
 export function previewContour(parameters: LampParameters, inset: number): THREE.Vector2[] {
-  if (parameters.cutoutPattern !== 'none') {
+  if (parameters.cutoutPattern !== 'none' || parameters.textEnabled) {
     return Array.from({ length: SEGMENTS }, (_, i) => new THREE.Vector2(...cutoutContourPoint(parameters, i / SEGMENTS, inset)))
   }
   const width = Math.max(2, parameters.width - 2 * inset)

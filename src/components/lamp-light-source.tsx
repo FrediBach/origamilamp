@@ -79,7 +79,7 @@ export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial 
   const topSupportY = mounting.upperY + MOUNTING.plateThickness
   const pendant = pendantIndex(lighting.sources)
   const brightness = lightOn ? parameters.lightIntensity / 100 : 0
-  const { emitters, points } = useLampFlicker(lightOn, parameters.lightIntensity, parameters.lightFlicker, lighting.sources, shadeMaterial)
+  const { emitters, points, samples } = useLampFlicker(lightOn, parameters.lightIntensity, parameters.lightFlicker, lighting.sources, shadeMaterial)
   return <group>
     {pendant >= 0 && mounting.minimumOpening > 0 && <mesh position={[0, topSupportY / 1000, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
       <cylinderGeometry args={[0.0015, 0.0015, (mounting.minimumOpening + 8) / 1000, 12]} />
@@ -99,20 +99,22 @@ export function LampLightSources({ parameters, lighting, lightOn, shadeMaterial 
           : <Support bottom={base.topY} top={source.centerY - source.height / 2} />}
         <Bulb source={source} inverted={index === pendant} color={lighting.color} brightness={brightness} emitterRef={material => { emitters.current[index] = material }} />
       </>}
-      {brightness > 0 && <pointLight
+    </group>)}
+      {brightness > 0 && samples.map((source, index) => <pointLight
+        key={`emission-${index}`}
         ref={light => { points.current[index] = light }}
-        position={[0, luminousCenter(source, index === pendant) / 1000, 0]}
+        position={[0, luminousCenter(source, source.inverted) / 1000, 0]}
         color={lighting.color}
-        intensity={LAMP_OUTPUT[source.kind] * brightness}
-        distance={3}
+        intensity={LAMP_OUTPUT[source.kind] * source.powerShare * brightness}
+        distance={5}
         decay={2}
         castShadow
-        shadow-mapSize={[512, 512]}
+        shadow-mapSize={source.kind === 'led' ? [256, 256] : [512, 512]}
         shadow-camera-near={0.005}
+        shadow-camera-far={5}
         shadow-normalBias={0.001}
         shadow-bias={-0.00005}
         shadow-radius={3}
-      />}
-    </group>)}
+      />)}
   </group>
 }

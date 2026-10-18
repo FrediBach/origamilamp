@@ -1,9 +1,10 @@
 import { BufferGeometry, Float32BufferAttribute, ShapeUtils, Vector2 } from 'three'
 import { calibrationParameters, deriveLamp, manufacturingErrors, type LampParameters } from './lamp'
 import { buildCutoutLayout, cutoutContourPoint, cutoutPhaseAt, cutoutProfile, cutoutRecessFace, type CutoutLayout } from './cutout-patterns'
+import { buildTextLayout, type TextLayout } from './text-projection'
 
 export interface ManufacturingOptions { calibration?: boolean }
-export interface ManufacturingGeometry { tpu: BufferGeometry; pla: BufferGeometry }
+export interface ManufacturingGeometry { tpu: BufferGeometry; pla: BufferGeometry; accent?: BufferGeometry }
 type Point2 = readonly [number, number]
 
 /** All points are CCW. Insetting preserves the straight-edge centers, so widths
@@ -211,7 +212,7 @@ function prepareLayout(layout: CutoutLayout): PreparedLayout {
  * ends use the same partitions, with zipper walls joining their contours.
  * This preserves every interface vertex without intersecting all phases in
  * one enormous planar arrangement. Residual skins remain continuous. */
-function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], material: 'TPU' | 'PLA'): BufferGeometry {
+function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], material: 'TPU' | 'PLA' | 'ACCENT'): BufferGeometry {
   const { sheets } = deriveLamp(p)
   const slabs: { sheet: number; kind: 'base' | 'recess' | 'separator' }[] = []
   const layerBoundaries = [0]
@@ -236,7 +237,8 @@ function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], ma
     const tpu = kind === 'base' || (kind === 'recess'
       ? !cell.outerCutout
       : cell.band === (sheet % 2 === 0 ? 0 : 2))
-    return material === 'TPU' ? tpu : !tpu
+    const accent = kind !== 'separator' && 'accent' in cell && cell.accent === true
+    return material === 'PLA' ? !tpu : tpu && (material === 'ACCENT' ? accent : !accent)
   }
   const positions: number[] = []
   const indices: number[] = []
@@ -265,7 +267,9 @@ function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], ma
       const key = selected.map(value => value ? '1' : '0').join('')
       let triangles = caps.get(key)
       if (!triangles) {
-        try { triangles = triangulateExposedRegion(layout, neighbours, selected) }
+        try { triangles = 'pointInsets' in layout
+          ? layout.faces.flatMap((face, index) => selected[index] ? [[...face.vertices]] : [])
+          : triangulateExposedRegion(layout, neighbours, selected) }
         catch (cause) { throw new Error(`Pattern membrane ${adjacent.sheet + 1} could not be triangulated.`, { cause }) }
         caps.set(key, triangles)
       }
@@ -292,12 +296,22 @@ function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], ma
       }
       continue
     }
+    if (material === 'ACCENT') continue
     const offsets = [0, p.outerConnector, p.bandWidth - p.innerConnector, p.bandWidth]
     const rings = material === 'TPU' ? (sheet % 2 === 0 ? [0, 1] : [2, 3]) : (sheet % 2 === 0 ? [1, 3] : [0, 2])
     for (let ring = 0; ring < rings.length; ring++) {
       const contour = (membrane: number, boundary: number) => {
+        const layout = layouts[membrane].layout
+        if ('pointInsets' in layout) {
+          const text = layout as TextLayout
+          const values = text.points.flatMap((point, index) => Math.abs(text.pointInsets[index] - offsets[rings[ring]]) < 0.0001
+            ? [{ u: text.pointUs[index], id: vertex(point, boundary) }] : []).sort((a, b) => a.u - b.u)
+          const unique = values.filter((value, index) => !index || value.id !== values[index - 1].id)
+          if (unique.length) unique.push({ ...unique[0], u: 1 })
+          return unique
+        }
         const result: { u: number; id: number }[] = []
-        for (const { u } of layouts[membrane].layout.nodes) {
+        for (const { u } of layout.nodes) {
           const id = vertex(cutoutContourPoint(p, u, offsets[rings[ring]]), boundary)
           if (result[result.length - 1]?.id !== id) result.push({ u, id })
         }
@@ -326,14 +340,14 @@ function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], ma
     }
   }
   const geometry = new BufferGeometry()
-  geometry.name = material === 'TPU' ? 'shade-tpu' : 'separators-pla'
+  geometry.name = material === 'TPU' ? 'shade-tpu' : material === 'ACCENT' ? 'shade-text-tpu' : 'separators-pla'
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   geometry.computeBoundingBox()
   geometry.computeBoundingSphere()
   geometry.userData = {
-    material, units: 'mm', axis: 'Z-up', construction: 'shared-vertex-exterior-boundary',
+    material: material === 'ACCENT' ? 'TPU' : material, ...(material === 'ACCENT' ? { color: p.textColor } : {}), units: 'mm', axis: 'Z-up', construction: 'shared-vertex-exterior-boundary',
     membraneCount: sheets, separatorCount: sheets - 1,
     layerBoundaries, nominalLayerHeight: p.layerHeight,
     cutoutPattern: p.cutoutPattern, cutoutLayers: p.cutoutLayers,
@@ -345,11 +359,25 @@ function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], ma
 }
 
 /** Exact nominal compressed configuration in millimetres, centered in XY,
- * resting at Z=0. Appearance rotation, height and expansion do not affect it. */
+ * resting at Z=0. Viewing rotation and expansion do not affect it. Target
+ * deployed height only affects the optional projected color partition. */
 export function buildManufacturingGeometry(parameters: LampParameters, options: ManufacturingOptions = {}): ManufacturingGeometry {
   const p = options.calibration ? calibrationParameters(parameters) : parameters
   const errors = manufacturingErrors(p)
   if (errors.length) throw new Error(errors.map(error => `${error.title}: ${error.detail}`).join('\n'))
+  if (p.textEnabled) {
+    const layouts = Array.from({ length: deriveLamp(p).sheets }, (_, sheet) => prepareLayout(buildTextLayout(p, sheet)))
+    const accent = buildPatternedBoundary(p, layouts, 'ACCENT')
+    if (!accent.getIndex()!.count) {
+      accent.dispose()
+      throw new Error('The projected text misses the printable membranes. Reduce its size or move it toward the center of the shade.')
+    }
+    const uncolored = { ...p, textEnabled: false }
+    const original = buildManufacturingGeometry(uncolored)
+    original.tpu.dispose()
+    try { return { tpu: buildPatternedBoundary(p, layouts, 'TPU'), pla: original.pla, accent } }
+    catch (error) { original.pla.dispose(); accent.dispose(); throw error }
+  }
   if (cutoutProfile(p).enabled) {
     const cache = new Map<string, PreparedLayout>()
     const layouts = Array.from({ length: deriveLamp(p).sheets }, (_, sheet) => {
