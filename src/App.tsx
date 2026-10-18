@@ -68,7 +68,7 @@ function App() {
     <a className="skip-link" href="#design-controls">Skip to design controls</a>
     <header className="site-header">
       <a className="brand" href="#" aria-label="Origami Lamp home"><OrigamiMark /><span>origami<span className="brand-light">lamp</span><span className="brand-dot">.</span></span></a>
-      <p className="header-slogan">The Art of Folding Light</p>
+      <p className="header-slogan">The Art of Folding Light - TPU/PLA 3D Printing Project</p>
       <div className="header-actions"><span className="local-state"><span className={cn('status-dot', !storageAvailable && 'warning-dot')} />{storageAvailable ? 'Saved on this device' : 'Device storage unavailable'}</span><Button variant="ghost" size="icon" className="help-button" aria-label="Help: the process" aria-haspopup="dialog" title="Help: the process" onClick={() => setModal('guide')}><CircleHelp size={19} /></Button><Button variant="outline" size="sm" onClick={() => { downloadDesign(parameters); setNotice('Design saved as a reusable JSON file.') }}><ArrowDownToLine size={15} /> Save design</Button></div>
     </header>
 
