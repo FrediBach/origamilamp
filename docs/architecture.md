@@ -227,13 +227,17 @@ The optical caster clones geometry before building a BVH because BVH constructio
 
 `PatternLightProjection` patches receiving `MeshStandardMaterial` shaders while skipping the diffuser marked `userData.isTPUDiffuser`. It composes existing shader hooks/cache keys and restores them on cleanup. Shader patches in this subsystem depend on Three.js shader source structure, so Three.js upgrades need shader tests and real browser rendering checks.
 
+The TPU diffuser uses a uniform rough surface without the room's procedural paper color map, whose whole-shade UV mapping would stretch noise into visible cloudy patches at close range. A constant linear reflectance of 0.918 retains that map's average tint. Shoji panels retain their paper texture.
+
+Plain and lettered diffusers use the same ordered partial-coverage lattice in native depth/distance shadow passes. The lattice stays fixed in shadow-map coordinates and rotates independently for each membrane, preserving absorption through successive folds without random clumps in close-up self-shadows. External lights account for base TPU absorption in those shadows; internal point lights leave base absorption to the optical maps and add only any lettering absorption in their native shadows.
+
 The diffuser adds back-face diffuse transmission for ceiling, daylight and studio directional lights, so downward-facing folds do not read as opaque material. Ambient room bounce and the opposite side of hemisphere lighting also transmit through the sheet, keeping the whole diffuser light even far from the bulb. This uses the same retained TPU thickness, shared-crease thickness and glyph pigment as the internal glow. Native front-face lighting, specular response and incoming shadow factors remain intact. Internal point lights use the separate glow map to avoid a hard shading transition at bulb height. The shared `LAMP_OUTPUT.shade` gain keeps bulb brightness and warmth visible against the room fill in both steady and flickering previews. These material-only adjustments leave the room's lighting and cast shadows unchanged.
 
 ### Performance and resource ownership
 
 - The Canvas uses `frameloop="demand"`; orbit damping is disabled so a static view can become idle.
 - `useLampFlicker` mutates existing source and material intensities instead of updating React state or rebuilding geometry per frame. It requests frames only for active flicker while the page is visible and the canvas is in view. Manufacturing views unmount this animation.
-- Shadow quality uses a shared uniform and finite refinement steps. Interaction and animation constrain sampling; it does not require a permanent render loop or shader recompilation for each quality step.
+- Room and studio shadow quality uses a shared uniform and finite refinement steps, including unlettered shades and lamp-off views. Interaction and animation constrain sampling; it does not require a permanent render loop or shader recompilation for each quality step. Manufacturing views retain the native shadow filter.
 - `patternLightingKey` distinguishes expensive geometry/optical changes from power, flicker, and warmth changes. Add relevant dependencies when extending geometry or pigment behavior; avoid invalidating geometry for unrelated appearance controls.
 - Explicitly allocated geometries, text/glow/wood/optical textures, temporary BVH geometry, timers, observers, and patched material hooks have owner cleanup. Preserve that lifecycle when adding effects, especially under React Strict Mode.
 
@@ -286,7 +290,7 @@ Playwright starts Vite on `127.0.0.1:5174` with `--strictPort`, uses one worker 
 | Text | `text-projection.test.ts`, `text-settings.test.ts`, `text-rendering.test.ts`, `text-section.test.ts`, `text-shadow.test.ts`, `text-distance-field.test.ts`, `tests/multicolor-text.spec.ts` |
 | Preview and hardware | `preview-geometry.test.ts`, `preview-frame.test.ts`, `mounting.test.ts`, `base.test.ts`, `spring-geometry.test.ts`, plus matching browser specs |
 | Corrections and editing | `parameter-value.test.ts`, `printability-fixes.test.ts`, `src/components/layer-inspector/model.test.ts`, `tests/studio.spec.ts` |
-| Lighting and shaders | Lighting/transmission/emission/pattern/flicker/shadow/wood unit tests, plus the matching `tests/*lighting*`, `*shadows*`, intensity and flicker specs |
+| Lighting and shaders | Lighting/transmission/emission/pattern/flicker/shadow/wood unit tests, plus `tests/shade-surface.spec.ts` and the matching `tests/*lighting*`, `*shadows*`, intensity and flicker specs |
 
 Unit test filenames without a directory above are under `src/lib/`. Geometry tests independently inspect output triangles and file bytes; preserve checks for opposite edge incidence, volume, component counts, registration, material occupancy and appearance-setting independence. Browser tests exercise visible effects, console errors, input behavior, persistence, downloads, keyboard focus, mobile layout and accessibility. They are needed for GPU/shader and interaction changes that a Node test cannot verify.
 

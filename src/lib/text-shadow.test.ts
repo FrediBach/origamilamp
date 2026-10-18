@@ -22,7 +22,7 @@ function coverageFunction(shader: WebGLProgramParametersWithUniforms) {
   return source.slice(start, source.indexOf('return pigmentCoverage;', start) + 'return pigmentCoverage;'.length)
 }
 
-describe('native lettering shadows', () => {
+describe('native diffuser and lettering shadows', () => {
   it.each(['circle', 'rounded-rectangle'] as const)('shares the exact folded %s mask between the surface and both shadow passes', shape => {
     const p = { ...parameters, shape }
     const visible = materialShader('standard'), point = materialShader('distance'), external = materialShader('depth')
@@ -94,25 +94,39 @@ describe('native lettering shadows', () => {
     }
   })
 
-  it.each(['depth', 'distance'] as const)('preserves native alpha hashing for plain %s shadows', kind => {
+  it.each(['depth', 'distance'] as const)('filters plain %s shadows with the same ordered coverage as blank lettering', kind => {
     const shader = materialShader(kind)
+    const blank = materialShader(kind)
     const output = shader.fragmentShader.split('#include <alphahash_fragment>')[1]
     applyTextShadow(shader, { ...parameters, textEnabled: false }, null, kind === 'depth')
-    expect(shader.vertexShader).toContain('#define USE_ALPHAHASH')
-    expect(shader.fragmentShader).toContain('#define USE_ALPHAHASH')
-    expect(shader.fragmentShader).toContain('#include <alphahash_fragment>')
+    applyTextShadow(blank, { ...parameters, text: '' }, null, kind === 'depth')
+    expect(shader.vertexShader).toBe(blank.vertexShader)
+    expect(shader.fragmentShader).toBe(blank.fragmentShader)
+    expect(shader.uniforms).toEqual(blank.uniforms)
+    expect(shader.vertexShader).not.toContain('#define USE_ALPHAHASH')
+    expect(shader.fragmentShader).not.toContain('#define USE_ALPHAHASH')
+    expect(shader.fragmentShader).not.toContain('#include <alphahash_fragment>')
     expect(shader.fragmentShader.endsWith(output)).toBe(true)
-    expect(shader.fragmentShader).not.toContain('textShadowBayer')
-    expect(shader.vertexShader).not.toContain('attribute vec3 cutoutCoord;')
+    expect(shader.fragmentShader).toContain('if (diffuseColor.a < textShadowThreshold()) discard;')
+    expect(shader.fragmentShader).toContain('float sheet = max(0.0, floor(vCutoutCoord.z + 0.5));')
+    expect(shader.fragmentShader).toContain('gl_FragCoord.x * c - gl_FragCoord.y * s')
+    expect(shader.vertexShader.match(/attribute vec3 cutoutCoord;/g)).toHaveLength(1)
+    expect(shader.uniforms.textPigmentMap).toBeUndefined()
   })
 
-  it('keeps enabled blank lettering on the ordered filter path', () => {
-    const shader = materialShader('depth')
-    applyTextShadow(shader, { ...parameters, text: '' }, null, true)
-    expect(shader.fragmentShader).toContain('textShadowBayer')
-    expect(shader.fragmentShader).not.toContain('#include <alphahash_fragment>')
-    expect(shader.fragmentShader).not.toContain('#define USE_ALPHAHASH')
-    expect(shader.uniforms.textPigmentMap).toBeUndefined()
+  it.each([1, 2, 4])('keeps plain %i-layer TPU absorption in external shadows only', tpuLayers => {
+    const p = { ...parameters, textEnabled: false, tpuLayers }
+    const point = materialShader('distance'), external = materialShader('depth')
+    applyTextShadow(point, p, null)
+    applyTextShadow(external, p, null, true)
+    // The internal optical maps already account for base TPU. Changing its
+    // shadow coverage must not absorb that light a second time.
+    expect(point.uniforms.textShadowOpacities.value[0]).toBe(0)
+    expect(1 - external.uniforms.textShadowOpacities.value[0]).toBeCloseTo(Math.exp(-1.1 * tpuLayers * p.layerHeight), 10)
+    for (const shader of [point, external]) {
+      expect(shader.fragmentShader).toContain('mix(textShadowOpacities.x, textShadowOpacities.y, 0.0)')
+      expect(shader.fragmentShader).not.toContain('textCoverage()')
+    }
   })
 
   it('distributes all 64 coverage thresholds evenly in every unrotated tile', () => {

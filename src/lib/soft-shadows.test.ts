@@ -24,7 +24,7 @@ describe('smooth partial-transmission shadows', () => {
     expect(shader.fragmentShader).toContain('texture(shadowMap, vec4(direction, dp))')
   })
 
-  it('preserves the original five-tap filters for ordinary views', () => {
+  it('preserves the original five-tap filters when refinement is disabled', () => {
     const { shader } = patchedShader(5)
     const originalFilters = Array.from(ShaderChunk.shadowmap_pars_fragment.matchAll(/float phi = interleavedGradientNoise[\s\S]*?\) \* 0\.2;/g), match => match[0])
     expect(originalFilters).toHaveLength(2)

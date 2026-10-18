@@ -132,7 +132,7 @@ export function shadowCoverageThreshold(x: number, y: number, sheet: number) {
   return shadowBayer8[((py % 8 + 8) % 8) * 8 + (px % 8 + 8) % 8]
 }
 
-/** Native depth/distance shadows preserve the projected glyph silhouette.
+/** Native depth/distance shadows preserve the shade and glyph silhouettes.
  * Ordered coverage avoids clumps from random alpha hashing. Its lattice lives
  * in the light's shadow map, so viewer-camera motion cannot move it. Rotating
  * consecutive sheet lattices prevents their transmission holes from aligning.
@@ -145,19 +145,6 @@ export function applyTextShadow(shader: WebGLProgramParametersWithUniforms, p: L
     ? 1 - Math.pow(TEXT_COLORS[p.textColor].transmission, thickness / 0.4)
     : 1 - Math.exp(-textPigmentAbsorption(p) * thickness)
   shader.uniforms.textShadowOpacities = { value: [baseOpacity, glyphOpacity] }
-  // Plain scenes retain the renderer's native five-tap shadow filter. Keep
-  // their original alpha hash instead of introducing an unfiltered lattice.
-  // Enabled but blank text still uses the ordered, progressively filtered path.
-  if (!p.textEnabled) {
-    const enableHash = '#ifndef USE_ALPHAHASH\n#define USE_ALPHAHASH\n#endif\n'
-    shader.vertexShader = enableHash + shader.vertexShader
-    shader.fragmentShader = enableHash + 'uniform vec2 textShadowOpacities;\n' + shader.fragmentShader
-    shader.fragmentShader = shader.fragmentShader.replace('#include <alphahash_fragment>', `
-      diffuseColor.a = mix(textShadowOpacities.x, textShadowOpacities.y, 0.0);
-      #include <alphahash_fragment>
-    `)
-    return
-  }
   const hasText = p.textEnabled && atlas !== null
   if (hasText) applyTextProjection(shader, p, atlas)
   shader.fragmentShader = `

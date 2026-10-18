@@ -11,7 +11,7 @@ describe('demand-rendered shadow quality', () => {
     return { samples, invalidate, controller }
   }
 
-  it('keeps ordinary scenes at the native five-sample baseline with no idle work', () => {
+  it('keeps disabled refinement at the native five-sample baseline with no idle work', () => {
     const { samples, invalidate, controller } = setup({ enabled: false })
     controller.reset()
     vi.advanceTimersByTime(1000)

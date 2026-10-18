@@ -51,12 +51,14 @@ test('shade stays bright and shows the bulb warmth in each environment', async (
   const canvas = page.locator('canvas')
   const capture = async (name: string) => {
     let previous = await canvas.screenshot()
+    let stableFrames = 0
+    // Plain shades now refine shadows for 650 ms after a scene change.
     await expect.poll(async () => {
       const next = await canvas.screenshot()
-      const same = previous.equals(next)
+      stableFrames = previous.equals(next) ? stableFrames + 1 : 0
       previous = next
-      return same
-    }, { timeout: 15_000 }).toBe(true)
+      return stableFrames
+    }, { timeout: 20_000, intervals: [350] }).toBeGreaterThanOrEqual(3)
     return shadeBrightness(page, await canvas.screenshot({ path: testInfo.outputPath(`${name}.png`) }))
   }
   const measurements = []
@@ -130,6 +132,7 @@ async function shadeGlowProfile(page: Page, on: Buffer, off: Buffer) {
 }
 
 test('shade illumination follows bulb placement smoothly', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
@@ -142,12 +145,14 @@ test('shade illumination follows bulb placement smoothly', async ({ page }, test
   const canvas = page.locator('canvas')
   const capture = async (name: string) => {
     let previous = await canvas.screenshot()
+    let stableFrames = 0
+    // Plain shades now refine shadows for 650 ms after a scene change.
     await expect.poll(async () => {
       const next = await canvas.screenshot()
-      const same = previous.equals(next)
+      stableFrames = previous.equals(next) ? stableFrames + 1 : 0
       previous = next
-      return same
-    }, { timeout: 15_000 }).toBe(true)
+      return stableFrames
+    }, { timeout: 20_000, intervals: [350] }).toBeGreaterThanOrEqual(3)
     return canvas.screenshot({ path: testInfo.outputPath(`shade-${name}.png`) })
   }
   const peakPositions: number[] = []
@@ -161,7 +166,9 @@ test('shade illumination follows bulb placement smoothly', async ({ page }, test
     const profile = await shadeGlowProfile(page, on, off)
     const peak = Math.max(...profile)
     const largestStep = Math.max(...profile.slice(1).map((brightness, index) => Math.abs(brightness - profile[index])))
-    expect(peak).toBeGreaterThan(30)
+    // Filtered external shadows shift the lamp-off baseline slightly; retain
+    // a strong visible bulb contribution without pinning it to that baseline.
+    expect(peak).toBeGreaterThan(28)
     // Broad transmission stays smooth while remaining centered near its source.
     // The old direct-light artifact peaked well below the bulb instead.
     expect(largestStep / peak).toBeLessThan(0.16)
@@ -215,12 +222,14 @@ test('TPU membrane thickness changes transmitted brightness and falloff', async 
   }
   const capture = async (name: string) => {
     let previous = await canvas.screenshot()
+    let stableFrames = 0
+    // Plain shades now refine shadows for 650 ms after a scene change.
     await expect.poll(async () => {
       const next = await canvas.screenshot()
-      const same = previous.equals(next)
+      stableFrames = previous.equals(next) ? stableFrames + 1 : 0
       previous = next
-      return same
-    }, { timeout: 15_000 }).toBe(true)
+      return stableFrames
+    }, { timeout: 20_000, intervals: [350] }).toBeGreaterThanOrEqual(3)
     return canvas.screenshot({ path: testInfo.outputPath(`transmission-${name}.png`) })
   }
   const captureProfile = async (name: string) => {

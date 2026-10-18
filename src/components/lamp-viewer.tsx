@@ -107,7 +107,6 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const { width: w, depth: d } = useMemo(() => previewFrameDimensions(geometry), [geometry])
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useWoodMaterials(parameters.frameWood)
-  const paper = useSurfaceTexture('paper')
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
@@ -124,19 +123,21 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const postBottom = floorY
   const postTop = upperRailY + railHeight / 2
   const colors = { ivory: '#e8dfcb', natural: '#d7c7a6', white: '#f5f1e6' }
+  // Keep the former paper map's mean linear reflectance without its stretched noise.
+  const shadeColor = new THREE.Color(colors[parameters.material]).multiplyScalar(0.918)
   return <group rotation={[0, THREE.MathUtils.degToRad(parameters.rotation), 0]}>
     <mesh geometry={geometry} position={[0, mounting.lowerY / 1000, 0]} castShadow receiveShadow>
       <meshDistanceMaterial
-        key={`text-distance-${parameters.textEnabled ? 'ordered' : 'hashed'}-${opticalKey}`}
+        key={`text-distance-ordered-${opticalKey}`}
         attach="customDistanceMaterial"
         onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, false)}
-        customProgramCacheKey={() => `text-distance-${parameters.textEnabled ? 'ordered' : 'hashed'}-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+        customProgramCacheKey={() => `text-distance-ordered-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
       />
       <meshDepthMaterial
-        key={`text-depth-${parameters.textEnabled ? 'ordered' : 'hashed'}-${opticalKey}`}
+        key={`text-depth-ordered-${opticalKey}`}
         attach="customDepthMaterial"
         onBeforeCompile={shader => applyTextShadow(shader, parameters, textAtlas, true)}
-        customProgramCacheKey={() => `text-depth-${parameters.textEnabled ? 'ordered' : 'hashed'}-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
+        customProgramCacheKey={() => `text-depth-ordered-${textAtlas ? textShaderKey(parameters) : 'plain'}`}
       />
       <meshStandardMaterial
         key={`${opticalKey}-${thinGlow.uuid}`}
@@ -148,8 +149,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           applySoftShadows(shader, shadowQuality)
         }}
         customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v6' : 'shade-transmission-v6'}${textAtlas ? textShaderKey(parameters) : ''}|soft-shadows-v2`}
-        color={colors[parameters.material]}
-        map={paper}
+        color={shadeColor}
         roughness={0.86}
         side={THREE.DoubleSide}
         emissive={lighting.color}
@@ -569,7 +569,7 @@ export function LampViewer(props: LampViewerProps) {
         fallback={<ViewerFallback />}
       >
         <ShadowQualityProvider
-          enabled={props.parameters.textEnabled && !isManufacturing}
+          enabled={!isManufacturing}
           sceneKey={JSON.stringify([props.parameters, props.mode, props.roomStyle, props.lightOn])}
           animated={props.lightOn && props.parameters.lightIntensity > 0 && props.parameters.lightFlicker > 0}
         >
