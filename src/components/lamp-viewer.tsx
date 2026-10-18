@@ -407,13 +407,67 @@ function ManufacturingModel({ parameters, mode }: { parameters: LampParameters; 
   </>
 }
 
+/** Ambient, ceiling and daylight illumination for the selected viewing environment. */
+function SceneLighting({ mode, roomStyle, ceilingLightTemperature, ceilingLightIntensity }: {
+  mode: PreviewMode
+  roomStyle: RoomStyle
+  ceilingLightTemperature: number
+  ceilingLightIntensity: number
+}) {
+  const brutalist = roomStyle === 'brutalist'
+  return <>
+    <color attach="background" args={[mode === 'room' ? brutalist ? '#d7e0e1' : '#dfded2' : '#ebeae4']} />
+    {mode === 'room' ? <>
+      {/* Approximate diffuse room bounce: broad sky/floor fill keeps the wood's
+          outward faces readable, while the ceiling contributes reflected light
+          with its own warmth and intensity. The direct lights retain shadows. */}
+      <ambientLight intensity={0.22} color={brutalist ? '#f0f5fa' : '#fffaee'} />
+      <hemisphereLight args={brutalist ? ['#e9f1fa', '#b0b5b1', 1.15] : ['#f7f5ed', '#c3b49a', 1.05]} />
+      <ambientLight color={lightTemperatureColor(ceilingLightTemperature)} intensity={0.3 * ceilingLightIntensity / 100} />
+      {/* Both rooms share the ceiling fixture. The brutalist glazing adds
+          crisper daylight shadows from its steel mullions. */}
+      <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(ceilingLightTemperature)} intensity={6.5 * ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
+        castShadow={ceilingLightIntensity > 0} shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
+        shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
+      <directionalLight position={[-1.5, 2, -2.2]} intensity={brutalist ? 0.7 : 0.4} color="#e9f0ff"
+        castShadow={brutalist} shadow-mapSize={[1024, 1024]} shadow-camera-left={-3} shadow-camera-right={3}
+        shadow-camera-top={3} shadow-camera-bottom={-2} shadow-camera-near={0.1} shadow-camera-far={8}
+        shadow-normalBias={0.002} shadow-bias={-0.0001} shadow-radius={3} />
+    </> : <>
+      <ambientLight intensity={0.3} color="#fffaee" />
+      <hemisphereLight args={['#f7f5ed', '#a09b88', 0.95]} />
+      <directionalLight position={[-2, 3, 1]} intensity={2.15} color="#fff5e5" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-2.5} shadow-camera-right={2.5} shadow-camera-top={3} shadow-camera-bottom={-1.5} shadow-normalBias={0.0015} shadow-bias={-0.0001} shadow-radius={4} />
+      <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
+      <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
+    </>}
+  </>
+}
+
+/** Room architecture or the neutral floor and print grid surrounding the model. */
+function SceneEnvironment({ mode, roomStyle, floorY, manufacturing }: {
+  mode: PreviewMode
+  roomStyle: RoomStyle
+  floorY: number
+  manufacturing: boolean
+}) {
+  const brutalist = roomStyle === 'brutalist'
+  return <>
+    {mode === 'room' ? brutalist ? <BrutalistRoom floorY={floorY} /> : <JapaneseRoom /> : <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
+        <planeGeometry args={[20, 20]} />
+        <meshStandardMaterial color="#e6e4dc" roughness={1} />
+      </mesh>
+      {manufacturing && <gridHelper args={[0.6, 30, '#bcbab1', '#d4d2c9']} position={[0, -0.002, 0]} />}
+    </>}
+  </>
+}
+
 function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyboard, onReady }: LampViewerProps & { keyboard: KeyboardCommand }) {
   const { camera, invalidate } = useThree()
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
   const { displayHeight, compressedHeight } = deriveLamp(parameters)
   const mounting = deriveMounting(parameters)
   const manufacturing = mode === 'print' || mode === 'materials' || mode === 'section'
-  const brutalist = roomStyle === 'brutalist'
   const floorY = mode === 'room' ? ROOM_FLOOR_Y : STUDIO_FLOOR_Y
   const height = manufacturing ? compressedHeight / 1000 : parameters.attachment === 'springs'
     ? (mounting.upperRailY + MOUNTING.frameRailHeight / 2) / 1000
@@ -453,37 +507,8 @@ function Scene({ parameters, mode, roomStyle = 'tatami', lightOn, resetKey, keyb
   useEffect(() => { onReady?.() }, [onReady])
 
   return <>
-    <color attach="background" args={[mode === 'room' ? brutalist ? '#d7e0e1' : '#dfded2' : '#ebeae4']} />
-    {mode === 'room' ? <>
-      {/* Approximate diffuse room bounce: broad sky/floor fill keeps the wood's
-          outward faces readable, while the ceiling contributes reflected light
-          with its own warmth and intensity. The direct lights retain shadows. */}
-      <ambientLight intensity={0.22} color={brutalist ? '#f0f5fa' : '#fffaee'} />
-      <hemisphereLight args={brutalist ? ['#e9f1fa', '#b0b5b1', 1.15] : ['#f7f5ed', '#c3b49a', 1.05]} />
-      <ambientLight color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={0.3 * parameters.ceilingLightIntensity / 100} />
-      {/* Both rooms share the ceiling fixture. The brutalist glazing adds
-          crisper daylight shadows from its steel mullions. */}
-      <spotLight position={[-0.15, 2.25, 0.2]} color={lightTemperatureColor(parameters.ceilingLightTemperature)} intensity={6.5 * parameters.ceilingLightIntensity / 100} angle={1.08} penumbra={0.65} distance={5} decay={2}
-        castShadow={parameters.ceilingLightIntensity > 0} shadow-mapSize={[2048, 2048]} shadow-camera-near={0.1} shadow-camera-far={5}
-        shadow-normalBias={0.001} shadow-bias={-0.00005} shadow-radius={4} />
-      <directionalLight position={[-1.5, 2, -2.2]} intensity={brutalist ? 0.7 : 0.4} color="#e9f0ff"
-        castShadow={brutalist} shadow-mapSize={[1024, 1024]} shadow-camera-left={-3} shadow-camera-right={3}
-        shadow-camera-top={3} shadow-camera-bottom={-2} shadow-camera-near={0.1} shadow-camera-far={8}
-        shadow-normalBias={0.002} shadow-bias={-0.0001} shadow-radius={3} />
-    </> : <>
-      <ambientLight intensity={0.3} color="#fffaee" />
-      <hemisphereLight args={['#f7f5ed', '#a09b88', 0.95]} />
-      <directionalLight position={[-2, 3, 1]} intensity={2.15} color="#fff5e5" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-2.5} shadow-camera-right={2.5} shadow-camera-top={3} shadow-camera-bottom={-1.5} shadow-normalBias={0.0015} shadow-bias={-0.0001} shadow-radius={4} />
-      <directionalLight position={[2, 1.2, 3]} intensity={0.3} color="#f0f4ff" />
-      <pointLight position={[-0.35, 1.1, 0.65]} intensity={0.38} color="#fff4df" distance={2.7} decay={2} />
-    </>}
-    {mode === 'room' ? brutalist ? <BrutalistRoom floorY={floorY} /> : <JapaneseRoom /> : <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
-        <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial color="#e6e4dc" roughness={1} />
-      </mesh>
-      {manufacturing && <gridHelper args={[0.6, 30, '#bcbab1', '#d4d2c9']} position={[0, -0.002, 0]} />}
-    </>}
+    <SceneLighting mode={mode} roomStyle={roomStyle} ceilingLightTemperature={parameters.ceilingLightTemperature} ceilingLightIntensity={parameters.ceilingLightIntensity} />
+    <SceneEnvironment mode={mode} roomStyle={roomStyle} floorY={floorY} manufacturing={manufacturing} />
     {manufacturing ? <ManufacturingModel parameters={parameters} mode={mode} /> : <Lamp parameters={parameters} lightOn={lightOn} floorY={floorY} />}
     {/* The furnished room uses the lights' cast shadows. ContactShadows captures
         all visible geometry, including architecture, so reserve that extra
