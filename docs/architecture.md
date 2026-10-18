@@ -227,6 +227,8 @@ The optical caster clones geometry before building a BVH because BVH constructio
 
 `PatternLightProjection` patches receiving `MeshStandardMaterial` shaders while skipping the diffuser marked `userData.isTPUDiffuser`. It composes existing shader hooks/cache keys and restores them on cleanup. Shader patches in this subsystem depend on Three.js shader source structure, so Three.js upgrades need shader tests and real browser rendering checks.
 
+The diffuser adds back-face diffuse transmission for ceiling, daylight and studio directional lights, so downward-facing folds do not read as opaque material. Ambient room bounce and the opposite side of hemisphere lighting also transmit through the sheet, keeping the whole diffuser light even far from the bulb. This uses the same retained TPU thickness, shared-crease thickness and glyph pigment as the internal glow. Native front-face lighting, specular response and incoming shadow factors remain intact. Internal point lights use the separate glow map to avoid a hard shading transition at bulb height. The shared `LAMP_OUTPUT.shade` gain keeps bulb brightness and warmth visible against the room fill in both steady and flickering previews. These material-only adjustments leave the room's lighting and cast shadows unchanged.
+
 ### Performance and resource ownership
 
 - The Canvas uses `frameloop="demand"`; orbit damping is disabled so a static view can become idle.

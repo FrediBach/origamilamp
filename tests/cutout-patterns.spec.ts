@@ -423,7 +423,11 @@ test('pattern shapes change transmitted shade and room light without making open
   await writeFile(testInfo.outputPath('pattern-transmission-difference.json'), JSON.stringify(difference, null, 2))
   expect(difference.shade.mean, 'pattern-dependent transmission is visible on the shade').toBeGreaterThan(0.25)
   expect(difference.floor.mean, 'pattern-dependent transmission reaches the floor').toBeGreaterThan(0.01)
-  expect(difference.shade.unlit, 'switching off the lamp leaves continuous TPU, without glowing holes').toBeLessThan(0.1)
+  // Daylight now scatters through the retained TPU too. Its faint thickness
+  // contrast should stay much weaker than the powered pattern, with no lamp
+  // projection remaining on the floor when the source is switched off.
+  expect(difference.shade.mean, 'powered patterns dominate the daylight response').toBeGreaterThan(difference.shade.unlit * 2)
+  expect(difference.floor.unlit, 'switching off the lamp removes its projected pattern').toBeLessThan(0.1)
   for (const pattern of ['Triangles', 'Half circles', 'Rectangles']) {
     const added = await transmissionDifference(page, [...frames[`${pattern}-25`], ...frames['None-25']])
     await testInfo.attach(`${pattern}-versus-solid`, { body: JSON.stringify(added, null, 2), contentType: 'application/json' })

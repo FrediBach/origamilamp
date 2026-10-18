@@ -147,7 +147,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           if (textAtlas) applyTextTransmission(shader, parameters, textAtlas)
           applySoftShadows(shader, shadowQuality)
         }}
-        customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v4' : 'shade-transmission-v4'}${textAtlas ? textShaderKey(parameters) : ''}|soft-shadows-v2`}
+        customProgramCacheKey={() => `${patterned ? 'shade-pattern-transmission-v6' : 'shade-transmission-v6'}${textAtlas ? textShaderKey(parameters) : ''}|soft-shadows-v2`}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}

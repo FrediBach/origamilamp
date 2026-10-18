@@ -5,7 +5,7 @@ import type { PreviewLightSource } from '@/lib/lighting'
 import { sampleLightFlicker } from '@/lib/light-flicker'
 import { lampEmissionSamples } from '@/lib/light-emission'
 
-export const LAMP_OUTPUT = { shade: 1.8, emitter: 1.65, led: 12, bulb: 9 } as const
+export const LAMP_OUTPUT = { shade: 3.6, emitter: 1.65, led: 12, bulb: 9 } as const
 
 /** One electrical flutter drives the sources, their cast light, and the
  * transmitted shade glow. Mutating uniforms avoids React renders, geometry

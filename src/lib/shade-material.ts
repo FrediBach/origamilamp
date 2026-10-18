@@ -103,6 +103,10 @@ export function applyTextTransmission(shader: WebGLProgramParametersWithUniforms
     membraneGlow *= mix(1.0, exp(-textPigmentAbsorption * pigmentThickness), pigmentCoverage);
     totalEmissiveRadiance *= membraneGlow;
   `)
+  shader.fragmentShader = shader.fragmentShader.replace('shadeDiffuseTransmission = exp(-1.1 * shadeOpticalThickness);', `
+    shadeDiffuseTransmission = exp(-1.1 * shadeOpticalThickness);
+    shadeDiffuseTransmission *= mix(1.0, exp(-textPigmentAbsorption * shadeOpticalThickness), pigmentCoverage);
+  `)
 }
 
 const SHADOW_LAYER_ANGLE = 2.399963229728653
@@ -180,15 +184,42 @@ export function applyTextShadow(shader: WebGLProgramParametersWithUniforms, p: L
  * Also applying opaque point-light shading makes nearly horizontal folds flip
  * from lit to unlit at bulb height, creating a false dark band. Exclude that
  * direct contribution on the shade only; the room still uses the point lights
- * and their shadows. Ceiling, daylight and studio directional lighting retain
- * their ordinary crease shading and shadows on the diffuser. */
+ * and their shadows. External light also scatters through the back of thin TPU:
+ * opaque Lambert shading alone leaves the downward-facing folds too dark.
+ * Room bounce also arrives through the opposite face, lifting the whole shade
+ * even far from the bulb. Keep native reflection and incoming shadow factors. */
 export function applyShadeTransmission(shader: WebGLProgramParametersWithUniforms) {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_pars_fragment>', `
+    #include <lights_physical_pars_fragment>
+    float shadeDiffuseTransmission;
+    void RE_Direct_Shade(const in IncidentLight directLight, const in vec3 geometryPosition,
+      const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal,
+      const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
+      RE_Direct_Physical(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+      // Spread direct backlighting across the diffuser without erasing folds.
+      float backLight = 0.5 * max(-dot(geometryNormal, directLight.direction), 0.0);
+      reflectedLight.directDiffuse += backLight * shadeDiffuseTransmission * directLight.color
+        * BRDF_Lambert(material.diffuseContribution);
+    }
+    #undef RE_Direct
+    #define RE_Direct RE_Direct_Shade
+  `)
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <lights_fragment_begin>',
-    ShaderChunk.lights_fragment_begin.replace(
-      '#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )',
-      '#if 0 // Point-source transmission is supplied by the shade glow map.',
-    ),
+    ShaderChunk.lights_fragment_begin
+      .replace(
+        '#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )',
+        '#if 0 // Point-source transmission is supplied by the shade glow map.',
+      )
+      .replace(
+        'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );',
+        'vec3 irradiance = getAmbientLightIrradiance( ambientLightColor ) * (1.0 + shadeDiffuseTransmission);',
+      )
+      .replace(
+        'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );',
+        `irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );
+         irradiance += shadeDiffuseTransmission * getHemisphereLightIrradiance( hemisphereLights[ i ], -geometryNormal );`,
+      ),
   )
 }
 
@@ -242,17 +273,21 @@ export function applyPatternTransmission(shader: WebGLProgramParametersWithUnifo
     }
   ` + shader.fragmentShader
   shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
+    float shadeOpticalThickness = mix(cutoutProfile.z, cutoutProfile.w, cutoutMask(vCutoutCoord.z));
+    bool terminal = vCutoutCoord.z < 0.5 || vCutoutCoord.z >= cutoutSettings.w - 0.5;
+    float joiningThickness = 0.0;
+    if (vCutoutJoin >= 0.0 && (!terminal || vCutoutCoord.y <= cutoutJoining.y)) {
+      // Shared creases include both neighbouring membranes and their TPU join.
+      float neighbourThickness = mix(cutoutProfile.z, cutoutProfile.w, cutoutMask(vCutoutJoin));
+      joiningThickness = neighbourThickness + cutoutJoining.x;
+    }
+    shadeOpticalThickness += joiningThickness;
+    shadeDiffuseTransmission = exp(-1.1 * shadeOpticalThickness);
     #ifdef USE_EMISSIVEMAP
       vec4 normalGlow = texture2D(emissiveMap, vEmissiveMapUv);
       vec4 thinGlow = texture2D(cutoutThinGlow, vEmissiveMapUv);
       vec3 membraneGlow = mix(normalGlow.rgb, thinGlow.rgb, cutoutMask(vCutoutCoord.z));
-      bool terminal = vCutoutCoord.z < 0.5 || vCutoutCoord.z >= cutoutSettings.w - 0.5;
-      if (vCutoutJoin >= 0.0 && (!terminal || vCutoutCoord.y <= cutoutJoining.y)) {
-        // The flat crease stands for two joined membranes plus the TPU left
-        // between them. Each membrane keeps its own pattern selection.
-        float neighbourThickness = mix(cutoutProfile.z, cutoutProfile.w, cutoutMask(vCutoutJoin));
-        membraneGlow *= exp(-1.1 * (neighbourThickness + cutoutJoining.x));
-      }
+      membraneGlow *= exp(-1.1 * joiningThickness);
       totalEmissiveRadiance *= membraneGlow;
     #endif
   `)

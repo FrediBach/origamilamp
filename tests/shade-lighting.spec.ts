@@ -1,4 +1,97 @@
+import { writeFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
+
+async function shadeBrightness(page: Page, screenshot: Buffer) {
+  return page.evaluate(async encoded => {
+    const bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0))
+    const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const canvas = new OffscreenCanvas(image.width, image.height)
+    const context = canvas.getContext('2d')!
+    context.drawImage(image, 0, 0)
+    const pixels = context.getImageData(
+      Math.round(image.width * 0.445), Math.round(image.height * 0.18),
+      Math.round(image.width * 0.07), Math.round(image.height * 0.60),
+    )
+    let warmth = 0
+    const rows = Array.from({ length: pixels.height }, (_, y) => {
+      let brightness = 0
+      for (let x = 0; x < pixels.width; x++) {
+        const pixel = (y * pixels.width + x) * 4
+        brightness += pixels.data[pixel] * 0.2126 + pixels.data[pixel + 1] * 0.7152 + pixels.data[pixel + 2] * 0.0722
+        warmth += pixels.data[pixel] - pixels.data[pixel + 2]
+      }
+      return brightness / pixels.width
+    }).sort((a, b) => a - b)
+    image.close()
+    return {
+      mean: rows.reduce((sum, value) => sum + value, 0) / rows.length,
+      dark: rows[Math.floor(rows.length * 0.1)],
+      bright: rows[Math.floor(rows.length * 0.9)],
+      warmth: warmth / (pixels.width * pixels.height),
+    }
+  }, screenshot.toString('base64'))
+}
+
+test('shade stays bright and shows the bulb warmth in each environment', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Finish', exact: true }).click()
+  await page.getByRole('button', { name: 'One bulb', exact: true }).click()
+  const intensity = page.getByRole('spinbutton', { name: 'Lamp light intensity (percent)', exact: true })
+  const height = page.getByRole('spinbutton', { name: 'Bulb height (percent)', exact: true })
+  const temperature = page.getByRole('spinbutton', { name: 'Light warmth (kelvin)', exact: true })
+  await intensity.fill('200')
+  await intensity.press('Tab')
+  await height.fill('70')
+  await height.press('Tab')
+  const light = page.getByRole('switch', { name: 'Preview light', exact: true })
+  const canvas = page.locator('canvas')
+  const capture = async (name: string) => {
+    let previous = await canvas.screenshot()
+    await expect.poll(async () => {
+      const next = await canvas.screenshot()
+      const same = previous.equals(next)
+      previous = next
+      return same
+    }, { timeout: 15_000 }).toBe(true)
+    return shadeBrightness(page, await canvas.screenshot({ path: testInfo.outputPath(`${name}.png`) }))
+  }
+  const measurements = []
+  for (const environment of ['Tatami', 'Brutalist', 'Studio']) {
+    await page.getByRole('button', { name: environment, exact: true }).click()
+    await light.setChecked(false)
+    const off = await capture(`${environment}-off`)
+    await light.setChecked(true)
+    const on = await capture(`${environment}-200`)
+    await temperature.fill('1800')
+    await temperature.press('Tab')
+    const warm = await capture(`${environment}-warm`)
+    await temperature.fill('6500')
+    await temperature.press('Tab')
+    const cool = await capture(`${environment}-cool`)
+    await temperature.fill('2700')
+    await temperature.press('Tab')
+    measurements.push({ environment, off, on, warm, cool })
+  }
+  await testInfo.attach('shade-brightness', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' })
+  await writeFile(testInfo.outputPath('shade-brightness.json'), JSON.stringify(measurements, null, 2))
+  for (const { environment, off, on, warm, cool } of measurements) {
+    // Check the whole surface as well as shaded faces. Softening fold contrast
+    // alone left the Tatami mean at 174/255 and still looked too dark.
+    expect(off.mean, `${environment}: overall diffuser brightness`).toBeGreaterThan(190)
+    expect(off.dark, `${environment}: shaded TPU`).toBeGreaterThan(180)
+    expect(off.bright - off.dark, `${environment}: visible folds`).toBeGreaterThan(4)
+    expect(off.bright - off.dark, `${environment}: soft fold shading`).toBeLessThan(environment === 'Studio' ? 50 : 25)
+    expect(on.mean - off.mean, `${environment}: bulb glow`).toBeGreaterThan(10)
+    expect(on.mean, `${environment}: one bulb at 200%`).toBeGreaterThan(228)
+    expect(on.dark, `${environment}: shaded TPU with one bulb at 200%`).toBeGreaterThan(215)
+    expect(warm.warmth - cool.warmth, `${environment}: bulb warmth remains visible on the shade`).toBeGreaterThan(35)
+  }
+  expect(errors).toEqual([])
+})
 
 async function shadeGlowProfile(page: Page, on: Buffer, off: Buffer) {
   return page.evaluate(async ({ on, off }) => {
