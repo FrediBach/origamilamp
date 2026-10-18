@@ -30,12 +30,13 @@ async function expectOutsidePatternMouths(layers: Locator, dimensions: { width: 
       const dy = Math.abs(y - p.depth / 2) - (p.depth / 2 - p.cornerRadius)
       return p.cornerRadius - Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) - Math.min(Math.max(dx, dy), 0)
     })
-    return { mouth: Math.min(...insets), deepest: Math.max(...insets) }
+    return { mouth: Math.min(...insets), deepest: Math.max(...insets), insets }
   }), dimensions)
   for (const [index, footprint] of footprints.entries()) {
     expect(footprint.mouth, `pattern ${index + 1} must open to the outside`).toBeCloseTo(0, 4)
     expect(footprint.deepest, `pattern ${index + 1} must preserve the inner rim`).toBeLessThan(dimensions.bandWidth)
   }
+  return footprints
 }
 
 async function transmissionDifference(page: Page, frames: Buffer[]) {
@@ -89,6 +90,7 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   const repeats = patterns.getByRole('spinbutton', { name: 'Pattern repeats', exact: true })
   const spacing = patterns.getByRole('spinbutton', { name: 'Cutout spacing (percent)', exact: true })
   const every = patterns.getByRole('spinbutton', { name: 'Pattern every', exact: true })
+  const phase = patterns.getByRole('spinbutton', { name: 'Phase per membrane (percent)', exact: true })
   const depth = patterns.getByRole('spinbutton', { name: 'Pattern depth (percent)', exact: true })
   const remaining = patterns.getByRole('spinbutton', { name: 'Remaining TPU layers', exact: true })
   await expect(patterns.getByRole('button', { name: 'None', exact: true })).toHaveAttribute('aria-pressed', 'true')
@@ -112,6 +114,7 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   await setControl(repeats, '16')
   await setControl(spacing, '55')
   await setControl(every, '3')
+  await setControl(phase, '25')
   await setControl(depth, '65')
   await page.getByRole('tab', { name: 'Print setup', exact: true }).click()
   await setControl(page.getByRole('spinbutton', { name: 'TPU layers', exact: true }), '3')
@@ -122,6 +125,7 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   await expect(repeats).toHaveValue('16')
   await expect(spacing).toHaveValue('55')
   await expect(every).toHaveValue('3')
+  await expect(phase).toHaveValue('25')
   await expect(depth).toHaveValue('65')
   await expect(remaining).toHaveValue('2')
 
@@ -130,7 +134,7 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   const recipePath = await (await saved).path()
   expect(recipePath).toBeTruthy()
   const recipe = JSON.parse(await readFile(recipePath!, 'utf8'))
-  expect(recipe.parameters).toMatchObject({ cutoutPattern: 'rectangles', cutoutCount: 16, cutoutSpacing: 55, cutoutEvery: 3, cutoutDepth: 65, cutoutLayers: 2, tpuLayers: 3 })
+  expect(recipe.parameters).toMatchObject({ cutoutPattern: 'rectangles', cutoutCount: 16, cutoutSpacing: 55, cutoutEvery: 3, cutoutPhase: 25, cutoutDepth: 65, cutoutLayers: 2, tpuLayers: 3 })
   await page.getByRole('button', { name: 'Reset all design settings', exact: true }).click()
   await expect(patterns.getByRole('button', { name: 'None', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByLabel('Import a saved design recipe', { exact: true }).setInputFiles(recipePath!)
@@ -138,6 +142,7 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   await expect(remaining).toHaveValue('2')
   await expect(spacing).toHaveValue('55')
   await expect(every).toHaveValue('3')
+  await expect(phase).toHaveValue('25')
 
   await page.getByRole('tab', { name: 'Print setup', exact: true }).click()
   await page.getByRole('button', { name: 'Inspect print layers', exact: true }).click()
@@ -145,8 +150,10 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   await layers.getByRole('button', { name: 'Top pattern layer', exact: true }).click()
   await expect(layers.getByRole('heading', { name: 'Patterned TPU + PLA recesses', exact: true })).toBeVisible()
   await expect(layers.locator('svg.li-footprint polygon')).toHaveCount(16)
-  await expectOutsidePatternMouths(layers, recipe.parameters)
+  const outlines = await expectOutsidePatternMouths(layers, recipe.parameters)
+  expect(outlines.some(outline => new Set(outline.insets.filter(inset => inset > 0.001 && inset < outline.deepest - 0.001).map(inset => inset.toFixed(4))).size > 4), 'rounded rectangles have a curved inner end while retaining the open outer mouth').toBe(true)
   await expect(layers.locator('.li-detail')).toContainText('top recesses')
+  await expect(layers.locator('.li-detail')).toContainText('Pattern phase: 0% of one repeat.')
   await expect(layers.locator('.li-detail')).toContainText('separator above')
   await expect(layers.locator('.li-detail')).toContainText('remain below')
   await expect(layers.locator('.li-detail')).toContainText('Peel it out from outside the shade.')
@@ -166,11 +173,12 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   await expectOutsidePatternMouths(layers, recipe.parameters)
   await expect(layers.locator('.li-detail')).toContainText('bottom recesses')
   await expect(layers.locator('.li-detail')).toContainText('Membrane 5 of')
+  await expect(layers.locator('.li-detail')).toContainText('Pattern phase: 75% of one repeat.')
   await expect(layers.locator('.li-detail')).toContainText('separator below')
   await expect(layers.locator('.li-detail')).toContainText('remain above')
   await expect(layers.locator('.li-detail')).toContainText('Peel it out from outside the shade.')
   await expect(layers.locator('svg.li-footprint')).toContainText('PLA exits at the outer edge')
-  expect(await layers.locator('svg.li-footprint polygon').evaluateAll(polygons => polygons.map(polygon => polygon.getAttribute('points')))).toEqual(topFootprints)
+  expect(await layers.locator('svg.li-footprint polygon').evaluateAll(polygons => polygons.map(polygon => polygon.getAttribute('points'))), 'three physical membranes advance a 25% phase by 75% of one repeat').not.toEqual(topFootprints)
   expect(Number(await selectedLayer.getAttribute('y')), 'layer 21 is the lower layer of membrane 5, with the section starting at membrane 3').toBeCloseTo(215 - 11 * (180 / 28), 5)
   await settledFrame(layers.locator('.li-section'))
   await page.screenshot({ path: testInfo.outputPath('bottom-pattern-layer-inspector.png') })
@@ -192,21 +200,32 @@ test('edge patterns are optional and survive saved recipes and calibration expor
   const archivePath = await calibration.path()
   const archive = unzipSync(await readFile(archivePath!))
   const exported = JSON.parse(strFromU8(archive['design.json']))
-  expect(exported.parameters).toMatchObject({ cutoutPattern: 'rectangles', cutoutCount: 16, cutoutSpacing: 55, cutoutEvery: 3, cutoutDepth: 65, cutoutLayers: 2, tpuLayers: 3, pleats: 4 })
+  expect(exported.parameters).toMatchObject({ cutoutPattern: 'rectangles', cutoutCount: 16, cutoutSpacing: 55, cutoutEvery: 3, cutoutPhase: 25, cutoutDepth: 65, cutoutLayers: 2, tpuLayers: 3, pleats: 4 })
   expect(archive['shade-tpu.stl'].byteLength).toBeGreaterThan(84)
   expect(archive['separators-pla.stl'].byteLength).toBeGreaterThan(84)
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
 
   // Recipes with patterns but without these controls retain their former
-  // spacing and every-membrane placement after import.
+  // spacing and aligned every-membrane placement after import.
   delete recipe.parameters.cutoutSpacing
   delete recipe.parameters.cutoutEvery
+  delete recipe.parameters.cutoutPhase
   await page.getByLabel('Import a saved design recipe', { exact: true }).setInputFiles({
     name: 'design-before-pattern-spacing.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(recipe)),
   })
   await expect(patterns.getByRole('button', { name: 'Rectangles', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(spacing).toHaveValue('30')
   await expect(every).toHaveValue('1')
+  await expect(phase).toHaveValue('0')
+
+  await page.getByRole('tab', { name: 'Print setup', exact: true }).click()
+  await page.getByRole('button', { name: 'Inspect print layers', exact: true }).click()
+  await layers.getByRole('button', { name: 'Top pattern layer', exact: true }).click()
+  const alignedFootprints = await layers.locator('svg.li-footprint polygon').evaluateAll(polygons => polygons.map(polygon => polygon.getAttribute('points')))
+  await layers.getByRole('button', { name: 'Bottom pattern layer', exact: true }).click()
+  expect(await layers.locator('svg.li-footprint polygon').evaluateAll(polygons => polygons.map(polygon => polygon.getAttribute('points'))), 'zero phase keeps neighbouring membranes aligned').toEqual(alignedFootprints)
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+  await page.getByRole('tab', { name: 'Form', exact: true }).click()
 
   // Older version-one recipes did not contain pattern settings. Restoring one
   // must give it the original solid membrane without discarding other choices.
@@ -239,6 +258,7 @@ test('patterns require a continuous thinner membrane and remain accessible on mo
   for (const [name, minimum, maximum] of [
     ['Cutout spacing (percent)', '5', '80'],
     ['Pattern every', '1', '24'],
+    ['Phase per membrane (percent)', '-100', '100'],
   ]) {
     const slider = patterns.getByRole('slider', { name, exact: true })
     await slider.focus()
@@ -266,7 +286,7 @@ test('patterns require a continuous thinner membrane and remain accessible on mo
   await expect(page.getByRole('button', { name: 'Export the full design', exact: false })).toBeEnabled()
 })
 
-test('spacing and membrane intervals update printable footprints and transmitted light', async ({ page }, testInfo) => {
+test('spacing, membrane intervals, and phase update printable footprints and transmitted light', async ({ page }, testInfo) => {
   test.setTimeout(180_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -285,6 +305,7 @@ test('spacing and membrane intervals update printable footprints and transmitted
   await setControl(patterns.getByRole('spinbutton', { name: 'Pattern depth (percent)', exact: true }), '75')
   const spacing = patterns.getByRole('spinbutton', { name: 'Cutout spacing (percent)', exact: true })
   const every = patterns.getByRole('spinbutton', { name: 'Pattern every', exact: true })
+  const phase = patterns.getByRole('spinbutton', { name: 'Phase per membrane (percent)', exact: true })
   await setControl(spacing, '10')
   await setControl(every, '2')
 
@@ -331,9 +352,10 @@ test('spacing and membrane intervals update printable footprints and transmitted
   const light = page.getByRole('switch', { name: 'Light', exact: true })
   const canvas = page.locator('canvas')
   const frames: Record<string, Buffer[]> = {}
-  for (const [name, gap, interval] of [['dense', '10', '1'], ['spaced', '80', '1'], ['third', '10', '3']]) {
+  for (const [name, gap, interval, advance] of [['dense', '10', '1', '0'], ['spaced', '80', '1', '0'], ['third', '10', '3', '0'], ['phased', '10', '1', '25'], ['reversed', '10', '1', '-25']]) {
     await setControl(spacing, gap)
     await setControl(every, interval)
+    await setControl(phase, advance)
     await light.setChecked(true)
     const on = await settledFrame(canvas)
     await light.setChecked(false)
@@ -349,6 +371,13 @@ test('spacing and membrane intervals update printable footprints and transmitted
     expect(difference.shade.signed, `${variant}: retaining more full-thickness TPU reduces shade transmission`).toBeGreaterThan(0.25)
     expect(difference.floor.mean, `${variant}: the receiver lighting responds to the changed recess geometry`).toBeGreaterThan(0.01)
     expect(difference.shade.unlit, `${variant}: unlit TPU remains continuous`).toBeLessThan(0.1)
+  }
+  for (const variant of ['phased', 'reversed']) {
+    const difference = await transmissionDifference(page, [...frames.dense, ...frames[variant]])
+    await testInfo.attach(`${variant}-transmission-difference`, { body: JSON.stringify(difference, null, 2), contentType: 'application/json' })
+    expect(difference.shade.mean, `${variant}: cumulative phase changes transmitted patterns on the shade`).toBeGreaterThan(0.25)
+    expect(difference.floor.mean, `${variant}: the room light follows the shifted recesses`).toBeGreaterThan(0.01)
+    expect(difference.shade.unlit, `${variant}: shifting recesses does not create open holes`).toBeLessThan(0.1)
   }
   expect(errors).toEqual([])
 })

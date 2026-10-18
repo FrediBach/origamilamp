@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { ChevronLeft, ChevronRight, Layers3 } from 'lucide-react'
 import { deriveLamp, validateLamp, type LampParameters } from '@/lib/lamp'
-import { cutoutLayerRange, cutoutPolygons, cutoutProfile, cutoutRecessFace } from '@/lib/cutout-patterns'
+import { cutoutDepthAt, cutoutLayerRange, cutoutPhaseAt, cutoutPolygons, cutoutProfile, cutoutRecessFace } from '@/lib/cutout-patterns'
 import './layer-inspector.css'
 
 const TPU = '#f1e4c9'
@@ -125,19 +125,20 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
       </section>
 
       <section className="li-diagram-panel" aria-labelledby={`${id}-section-heading`}>
-        <div className="li-panel-heading"><h4 id={`${id}-section-heading`}>Through the wall</h4><span>{pattern.enabled ? 'Pattern centre · Z enlarged' : 'Section · Z enlarged'}</span></div>
+        <div className="li-panel-heading"><h4 id={`${id}-section-heading`}>Through the wall</h4><span>{pattern.enabled ? 'Fixed radial section · Z enlarged' : 'Section · Z enlarged'}</span></div>
         <svg className="li-section" viewBox="0 0 320 270" role="img" aria-labelledby={`${id}-section-title ${id}-section-desc`}>
           <title id={`${id}-section-title`}>Alternating rim joins in section</title>
-          <desc id={`${id}-section-desc`}>Membranes {startSheet + 1} to {startSheet + shownSheets} of {d.sheets}, from bottom to top. TPU sheets are connected alternately on the outer right edge and inner left edge. PLA fills each remaining gap. The outlined horizontal strip is selected print layer {layer + 1}. Vertical thickness is enlarged for inspection.</desc>
+          <desc id={`${id}-section-desc`}>Membranes {startSheet + 1} to {startSheet + shownSheets} of {d.sheets}, from bottom to top. TPU sheets are connected alternately on the outer right edge and inner left edge. PLA fills each remaining gap. The outlined horizontal strip is selected print layer {layer + 1}. Vertical thickness is enlarged for inspection. {pattern.enabled && 'The section stays at the first active membrane’s pattern centre; phased patterns can move out of this section on other membranes.'}</desc>
           {Array.from({ length: shownSheets }, (_, index) => {
             const actualSheet = startSheet + index
             const sheetBottom = sectionBottom - index * stride * layerPx
             const connectOuter = actualSheet % 2 === 0
             const connectorPx = sectionWidth * (connectOuter ? p.outerConnector : p.innerConnector) / p.bandWidth
             const sectionRecess = cutoutLayerRange(p, actualSheet)
+            const recessDepth = sectionRecess ? cutoutDepthAt(p, 0.5 / pattern.count, actualSheet) : 0
             return <g key={actualSheet}>
               <rect x={x} y={sheetBottom - membranePx} width={sectionWidth} height={membranePx} fill={TPU} stroke={INK} strokeWidth="0.65" />
-              {sectionRecess && <rect x={x + sectionWidth * (1 - pattern.depthMm / p.bandWidth)} y={sheetBottom - sectionRecess[1] * layerPx} width={sectionWidth * pattern.depthMm / p.bandWidth} height={(sectionRecess[1] - sectionRecess[0]) * layerPx} fill={PLA} stroke={INK} strokeWidth="0.65" />}
+              {sectionRecess && recessDepth > 1e-8 && <rect x={x + sectionWidth * (1 - recessDepth / p.bandWidth)} y={sheetBottom - sectionRecess[1] * layerPx} width={sectionWidth * recessDepth / p.bandWidth} height={(sectionRecess[1] - sectionRecess[0]) * layerPx} fill={PLA} stroke={INK} strokeWidth="0.65" />}
               {index < shownSheets - 1 && <>
                 <rect x={x} y={sheetBottom - membranePx - separatorPx} width={sectionWidth} height={separatorPx} fill={PLA} stroke={INK} strokeWidth="0.65" />
                 <rect x={connectOuter ? x + sectionWidth - connectorPx : x} y={sheetBottom - membranePx - separatorPx} width={connectorPx} height={separatorPx} fill={TPU} stroke={INK} strokeWidth="0.65" />
@@ -163,6 +164,7 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
 
     <div className="li-detail" aria-live="polite" aria-atomic="true">
       <strong>{membrane ? `Membrane ${sheet + 1} of ${d.sheets}` : `Gap ${sheet + 1} of ${d.separators} · membranes ${sheet + 1} and ${sheet + 2}`}</strong>
+      {membrane && patternedSheet && <p>Pattern phase: {Number((cutoutPhaseAt(p, sheet) * 100).toFixed(2))}% of one repeat.</p>}
       {pattern.enabled && membrane && !patternedSheet && sheet > 0 && sheet < d.sheets - 1 && <p>This membrane is skipped by the pattern interval of {p.cutoutEvery} membranes.</p>}
       <p>{recessedLayer ? `PLA fills the ${recessFace} recesses and joins the separator ${recessFace === 'top' ? 'above' : 'below'}. Peel it out from outside the shade. ${p.cutoutLayers} continuous TPU layer(s), ${mm(pattern.remainingThickness)}, remain ${recessFace === 'top' ? 'below' : 'above'} each pattern.` : membrane ? patternedSheet ? `This layer is continuous TPU. The ${recessFace === 'top' ? 'upper' : 'lower'} ${p.tpuLayers - p.cutoutLayers} layer(s) contain the outside-opening pattern recesses; the inner fold stays ${mm(d.membraneThickness)} thick.` : `All ${p.tpuLayers} layers of this ${mm(d.membraneThickness)} membrane use TPU across the full band. The open centre stays empty.` : `This ${mm(d.separatorThickness)} gap contains both materials: a ${mm(outerJoin ? p.outerConnector : p.innerConnector)} TPU join at the ${outerJoin ? 'outer' : 'inner'} rim and PLA everywhere else in the band. Remove this separator from ${outerJoin ? 'inside the central aperture' : 'outside the shade'}.`}</p>
     </div>

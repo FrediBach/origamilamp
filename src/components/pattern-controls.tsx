@@ -19,7 +19,7 @@ export function PatternControls({ parameters: p, onUpdate }: {
           { id: 'none', label: 'None', path: 'M3 18H37V5H3Z' },
           { id: 'triangles', label: 'Triangles', path: 'M3 18L10 6L17 18M23 18L30 6L37 18' },
           { id: 'half-circles', label: 'Half circles', path: 'M3 18a8 8 0 0 1 16 0M23 18a7 7 0 0 1 14 0' },
-          { id: 'rectangles', label: 'Rectangles', path: 'M4 18V6H17V18M24 18V6H37V18' },
+          { id: 'rectangles', label: 'Rectangles', path: 'M4 18V10Q4 6 8 6H13Q17 6 17 10V18M24 18V10Q24 6 28 6H33Q37 6 37 10V18' },
         ] as const).map(option => <button type="button" key={option.id}
           className={cn('attachment-option', p.cutoutPattern === option.id && 'selected')}
           aria-pressed={p.cutoutPattern === option.id} onClick={() => onUpdate('cutoutPattern', option.id)}>
@@ -33,6 +33,7 @@ export function PatternControls({ parameters: p, onUpdate }: {
       <ParameterControl label="Pattern repeats" value={p.cutoutCount} min={4} max={32} unit="" onChange={value => onUpdate('cutoutCount', value)} />
       <ParameterControl label="Cutout spacing" value={p.cutoutSpacing} min={5} max={80} unit="%" onChange={value => onUpdate('cutoutSpacing', value)} hint={`${profile.gapMm.toFixed(1)} mm gap along the outside edge · ${profile.mouthMm.toFixed(1)} mm cutout width. Percentage of each repeat; increase for wider gaps and narrower cutouts.`} />
       <ParameterControl label="Pattern every" value={p.cutoutEvery} min={1} max={24} unit="" onChange={value => onUpdate('cutoutEvery', value)} hint={`${p.cutoutEvery === 1 ? 'Every folding membrane' : `Every ${p.cutoutEvery} membranes`}, starting at the first unclamped membrane. ${Math.ceil(Math.max(0, p.pleats * 2 - 2) / p.cutoutEvery)} patterned; skipped membranes stay full thickness.`} />
+      <ParameterControl label="Phase per membrane" value={p.cutoutPhase} min={-100} max={100} unit="%" onChange={value => onUpdate('cutoutPhase', value)} hint="0% aligns the patterns; 50% shifts each membrane by half a repeat. Negative values reverse the direction. Phase advances across skipped membranes too." />
       <ParameterControl label="Pattern depth" value={p.cutoutDepth} min={10} max={75} unit="%" onChange={value => onUpdate('cutoutDepth', value)} hint={`${profile.depthMm.toFixed(1)} mm inward from the outside edge. Limited to protect the inner joining band.`} />
       <ParameterControl label="Remaining TPU layers" value={p.cutoutLayers} min={1} max={Math.max(1, p.tpuLayers - 1)} unit="" onChange={value => onUpdate('cutoutLayers', value)} hint={`${(p.cutoutLayers * p.layerHeight).toFixed(2)} mm in the pattern · ${(p.tpuLayers * p.layerHeight).toFixed(2)} mm elsewhere. Full thickness at both clamped ends.`} />
       {p.cutoutLayers >= p.tpuLayers && <p className="light-placement-note" role="status">Increase TPU layers in Print setup, or reduce remaining layers. A pattern must be thinner than the full membrane.</p>}

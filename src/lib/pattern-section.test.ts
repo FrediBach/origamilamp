@@ -3,6 +3,20 @@ import { DEFAULT_PARAMETERS } from './lamp'
 import { patternSectionIntervals } from './pattern-section'
 
 describe('manufacturing pattern section', () => {
+  it.each(['triangles', 'half-circles', 'rectangles'] as const)('moves the actual section intersection across the perimeter seam for %s', cutoutPattern => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, shape: 'circle' as const, cutoutPattern, cutoutCount: 5, cutoutPhase: 50 }
+    const first = patternSectionIntervals(p, 1)
+    const second = patternSectionIntervals(p, 2)
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(first[0][0]).toBeCloseTo(-90, 5)
+    expect(first[0][1]).toBeCloseTo(-90 + 22 * .55, 5)
+    expect(second[0][0]).toBeCloseTo(90 - 22 * .55, 5)
+    expect(second[0][1]).toBeCloseTo(90, 5)
+    expect(patternSectionIntervals(p, 3)).toEqual(first)
+    expect(patternSectionIntervals({ ...p, cutoutPhase: -50 }, 2)).toEqual(second)
+  })
+
   it.each([2, 3, 24])('leaves skipped membranes full thickness at interval %i', cutoutEvery => {
     const p = { ...DEFAULT_PARAMETERS, pleats: 4, shape: 'circle' as const, cutoutPattern: 'half-circles' as const, cutoutCount: 5, cutoutEvery }
     for (let sheet = 0; sheet < p.pleats * 2; sheet++) {

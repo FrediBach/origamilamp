@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DoubleSide, Mesh, MeshBasicMaterial, Raycaster, Vector3, type BufferGeometry } from 'three'
 import { DEFAULT_PARAMETERS, deriveLamp, manufacturingErrors, type LampParameters } from './lamp'
 import { buildManufacturingGeometry } from './manufacturing'
-import { buildCutoutLayout, cutoutAt, cutoutContourPoint, cutoutDepthAt, cutoutPolygons, cutoutProfile, cutoutMinimumWeb, cutoutRecessFace, cutoutLayerRange } from './cutout-patterns'
+import { buildCutoutLayout, cutoutAt, cutoutContourPoint, cutoutDepthAt, cutoutPolygons, cutoutProfile, cutoutMinimumWeb, cutoutRecessFace, cutoutLayerRange, cutoutPhaseAt } from './cutout-patterns'
 
 function audit(geometry: BufferGeometry) {
   const position = geometry.getAttribute('position'), index = geometry.getIndex()!
@@ -37,6 +37,114 @@ function audit(geometry: BufferGeometry) {
 const patterns = ['triangles', 'half-circles', 'rectangles'] as const
 
 describe('outside-open thinner TPU patterns', () => {
+  it.each(patterns)('advances phase per physical membrane, wraps both directions and preserves complete mouths: %s', cutoutPattern => {
+    const p = { ...DEFAULT_PARAMETERS, shape: 'circle' as const, pleats: 5, cutoutPattern, cutoutEvery: 3 }
+    for (const cutoutPhase of [-100, -37, 0, 25, 50, 100]) {
+      const shifted = { ...p, cutoutPhase }
+      for (const sheet of [1, 4, 7]) {
+        const phase = cutoutPhaseAt(shifted, sheet)
+        const expected = ((((sheet - 1) * cutoutPhase / 100) % 1) + 1) % 1
+        expect(phase).toBeCloseTo(expected)
+        const profile = cutoutProfile(shifted)
+        const polygons = cutoutPolygons(shifted, sheet)
+        expect(polygons).toHaveLength(p.cutoutCount)
+        for (let slot = 0; slot < p.cutoutCount; slot++) {
+          const center = (slot + 0.5 + phase) / p.cutoutCount
+          expect(cutoutDepthAt(shifted, center, sheet)).toBeCloseTo(profile.depthMm)
+          expect(cutoutDepthAt(shifted, center + profile.halfWidth * 1.01, sheet)).toBe(0)
+          expect(cutoutAt(shifted, sheet, center, 0)).toBe(true)
+          expect(cutoutAt(shifted, sheet, center, 1)).toBe(false)
+        }
+        // A shifted recess may cross u=0 but must remain a single polygon,
+        // with every inward point paired to a mouth at the outside rim.
+        for (const polygon of polygons) {
+          const radii = polygon.map(([x, y]) => Math.hypot(x, y))
+          expect(Math.max(...radii)).toBeCloseTo(p.width / 2, 6)
+          expect(Math.min(...radii)).toBeGreaterThan(p.width / 2 - p.bandWidth)
+        }
+      }
+      expect(cutoutPolygons(shifted, 2)).toEqual([])
+    }
+    expect(cutoutProfile({ ...p, cutoutPhase: NaN }).phaseStep).toBe(0)
+    expect(cutoutProfile({ ...p, cutoutPhase: 200 }).phaseStep).toBe(1)
+    expect(cutoutProfile({ ...p, cutoutPhase: -200 }).phaseStep).toBe(-1)
+  })
+
+  it('rounds only the inward rectangle corners while preserving a full-width open mouth', () => {
+    const p = { ...DEFAULT_PARAMETERS, cutoutPattern: 'rectangles' as const }
+    const profile = cutoutProfile(p)
+    const halfMouth = profile.mouthMm / 2, side = profile.rectangleSideHalfWidthMm, radius = profile.rectangleCornerMm
+    const at = (x: number) => cutoutDepthAt(p, .5 / profile.count + x / profile.outerPerimeterMm)
+    expect(radius).toBeGreaterThan(0)
+    expect(at(0)).toBeCloseTo(profile.depthMm)
+    expect(at(side - radius)).toBeCloseTo(profile.depthMm)
+    expect(at(side - radius + radius / Math.sqrt(2))).toBeCloseTo(profile.depthMm - radius + radius / Math.sqrt(2))
+    expect(at(side)).toBeCloseTo(profile.depthMm - radius)
+    expect(at(halfMouth * .999)).toBeGreaterThan(0)
+    expect(at(halfMouth * 1.001)).toBe(0)
+    let previous = profile.depthMm
+    for (let step = 0; step <= 200; step++) {
+      const depth = at(halfMouth * step / 200)
+      expect(depth).toBeLessThanOrEqual(previous + 1e-8)
+      previous = depth
+    }
+  })
+
+  it.each([67.04, -32.96])('coalesces sub-float32 angular strips without breaking printed surfaces at phase %s', cutoutPhase => {
+    // At this phase a rectangle corner and a contour sample are separated
+    // by <0.000001 mm. Fixed rings round to one vertex while the raw recess
+    // vertices used to round apart, leaving open cap boundaries.
+    const p = { ...DEFAULT_PARAMETERS, pleats: 2, cutoutCount: 32, cutoutPattern: 'rectangles' as const, cutoutPhase }
+    const geometry = buildManufacturingGeometry(p)
+    for (const mesh of Object.values(geometry)) {
+      const result = audit(mesh)
+      expect(result.badEdges).toBe(0)
+      expect(result.duplicateFaces).toBe(0)
+      expect(result.minArea).toBeGreaterThan(1e-9)
+      expect(result.volume).toBeGreaterThan(0)
+      expect(result.euler).toBe(0)
+      mesh.dispose()
+    }
+  })
+
+  it.each([84.8016429, 84.8016529, 84.8016629])('keeps the periodic seam closed when a connector crossing rounds onto it at phase %s', cutoutPhase => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 2, cutoutCount: 12, cutoutPattern: 'rectangles' as const, cutoutPhase }
+    const layout = buildCutoutLayout(p, 2)
+    expect(layout.nodes[0].depth).toBe(layout.nodes[layout.nodes.length - 1].depth)
+    const geometry = buildManufacturingGeometry(p)
+    for (const mesh of Object.values(geometry)) {
+      const result = audit(mesh)
+      expect(result.badEdges).toBe(0)
+      expect(result.duplicateFaces).toBe(0)
+      expect(result.minArea).toBeGreaterThan(1e-9)
+      expect(result.volume).toBeGreaterThan(0)
+      mesh.dispose()
+    }
+  })
+
+  it.each(patterns.flatMap(cutoutPattern => [
+    { cutoutPattern, shape: 'circle' as const, cutoutPhase: 37, cutoutEvery: 1, cutoutCount: 7 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutPhase: -23, cutoutEvery: 1, cutoutCount: 12 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutPhase: 50, cutoutEvery: 3, cutoutCount: 7 },
+  ]))('keeps staggered membrane layouts and separator transitions watertight: %j', change => {
+    const p = { ...DEFAULT_PARAMETERS, pleats: 4, tpuLayers: 4, cutoutLayers: 1, ...change }
+    const geometry = buildManufacturingGeometry(p)
+    const results = [audit(geometry.tpu), audit(geometry.pla)]
+    for (const result of results) {
+      expect(result.badEdges).toBe(0)
+      expect(result.duplicateFaces).toBe(0)
+      expect(result.minArea).toBeGreaterThan(1e-9)
+      expect(result.volume).toBeGreaterThan(0)
+      expect(result.euler).toBe(0)
+    }
+    expect(results[0].components).toBe(1)
+    expect(results[1].components).toBe(deriveLamp(p).separators)
+    const outerArea = p.shape === 'circle' ? Math.PI * (p.width / 2) ** 2 : p.width * p.depth - (4 - Math.PI) * p.cornerRadius ** 2
+    const innerArea = p.shape === 'circle' ? Math.PI * (p.width / 2 - p.bandWidth) ** 2 : (p.width - 2 * p.bandWidth) * (p.depth - 2 * p.bandWidth) - (4 - Math.PI) * (p.cornerRadius - p.bandWidth) ** 2
+    expect((results[0].volume + results[1].volume) / ((outerArea - innerArea) * deriveLamp(p).compressedHeight)).toBeCloseTo(1, 3)
+    geometry.tpu.dispose(); geometry.pla.dispose()
+  })
+
   it.each(patterns)('changes the outside gap without moving pattern centres or depth: %s', cutoutPattern => {
     const p = { ...DEFAULT_PARAMETERS, shape: 'circle' as const, pleats: 4, cutoutPattern }
     const profiles = [5, 30, 80].map(cutoutSpacing => cutoutProfile({ ...p, cutoutSpacing }))
@@ -195,10 +303,10 @@ describe('outside-open thinner TPU patterns', () => {
   })
 
   it.each(patterns.flatMap(cutoutPattern => [
-    { cutoutPattern, shape: 'circle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12 },
-    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12 },
+    { cutoutPattern, shape: 'circle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12, cutoutPhase: 37 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 1, cutoutSpacing: 30, cutoutCount: 12, cutoutPhase: -23 },
     { cutoutPattern, shape: 'circle' as const, cutoutEvery: 2, cutoutSpacing: 5, cutoutCount: 4 },
-    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 3, cutoutSpacing: 80, cutoutCount: 4 },
+    { cutoutPattern, shape: 'rounded-rectangle' as const, cutoutEvery: 3, cutoutSpacing: 80, cutoutCount: 4, cutoutPhase: 50 },
   ]))('prints outward release paths, correctly oriented residual skins and no inside recesses: %j', change => {
     // Unequal recess/residual thickness catches an accidental top-only slab
     // schedule that a symmetric one-layer / one-layer membrane would hide.
@@ -215,8 +323,8 @@ describe('outside-open thinner TPU patterns', () => {
       const skinZ = z + (top ? p.cutoutLayers / 2 : recessLayers + p.cutoutLayers / 2) * p.layerHeight
       const floorZ = z + (top ? p.cutoutLayers : recessLayers) * p.layerHeight
       for (let slot = 0; slot < p.cutoutCount; slot++) for (const offset of [-0.2, 0.07, 0.2]) {
-        const u = (slot + 0.5 + offset * cutoutProfile(p).mouthFraction / .7) / p.cutoutCount
-        const distance = cutoutDepthAt(p, u) * 0.45
+        const u = (slot + 0.5 + cutoutPhaseAt(p, sheet) + offset * cutoutProfile(p).mouthFraction / .7) / p.cutoutCount
+        const distance = cutoutDepthAt(p, u, sheet) * 0.45
         const inset = distance
         const [x, y] = cutoutContourPoint(p, u, inset)
         const pocket = new Vector3(x, y, pocketZ)

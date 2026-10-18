@@ -1,6 +1,6 @@
 import { BufferGeometry, Float32BufferAttribute, ShapeUtils, Vector2 } from 'three'
 import { calibrationParameters, deriveLamp, manufacturingErrors, type LampParameters } from './lamp'
-import { buildCutoutLayout, cutoutProfile, cutoutRecessFace, type CutoutLayout } from './cutout-patterns'
+import { buildCutoutLayout, cutoutContourPoint, cutoutPhaseAt, cutoutProfile, cutoutRecessFace, type CutoutLayout } from './cutout-patterns'
 
 export interface ManufacturingOptions { calibration?: boolean }
 export interface ManufacturingGeometry { tpu: BufferGeometry; pla: BufferGeometry }
@@ -184,13 +184,35 @@ function triangulateExposedRegion(layout: CutoutLayout, neighbours: number[][], 
   return triangles
 }
 
-/** Extrude a conforming triangular planar partition into complementary
- * materials. Recesses face upward on odd sheets and downward on even sheets,
- * joining the same outward-open separator. Whole residual layers remain on
- * the opposite face, so no patterned PLA enters an inward-open gap. */
-function buildPatternedBoundary(p: LampParameters, layout: CutoutLayout, material: 'TPU' | 'PLA'): BufferGeometry {
+interface PreparedLayout {
+  layout: CutoutLayout
+  neighbours: number[][]
+  caps: Map<string, number[][]>
+}
+
+function prepareLayout(layout: CutoutLayout): PreparedLayout {
+  const neighbours = layout.faces.map(() => [-1, -1, -1])
+  const edges = new Map<string, readonly [number, number]>()
+  layout.faces.forEach(({ vertices }, face) => {
+    for (let side = 0; side < 3; side++) {
+      const a = vertices[side], b = vertices[(side + 1) % 3]
+      const key = a < b ? `${a}/${b}` : `${b}/${a}`
+      const previous = edges.get(key)
+      if (previous) {
+        neighbours[face][side] = previous[0]
+        neighbours[previous[0]][previous[1]] = face
+      } else edges.set(key, [face, side])
+    }
+  })
+  return { layout, neighbours, caps: new Map() }
+}
+
+/** Each membrane has its own phase-specific planar partition. Its separator
+ * ends use the same partitions, with zipper walls joining their contours.
+ * This preserves every interface vertex without intersecting all phases in
+ * one enormous planar arrangement. Residual skins remain continuous. */
+function buildPatternedBoundary(p: LampParameters, layouts: PreparedLayout[], material: 'TPU' | 'PLA'): BufferGeometry {
   const { sheets } = deriveLamp(p)
-  const { points, faces } = layout
   const slabs: { sheet: number; kind: 'base' | 'recess' | 'separator' }[] = []
   const layerBoundaries = [0]
   const addSlab = (sheet: number, kind: 'base' | 'recess' | 'separator', layers: number) => {
@@ -208,65 +230,100 @@ function buildPatternedBoundary(p: LampParameters, layout: CutoutLayout, materia
     } else addSlab(sheet, 'base', p.tpuLayers)
     if (sheet < sheets - 1) addSlab(sheet, 'separator', p.separatorLayers)
   }
-  const neighbours = faces.map(() => [-1, -1, -1])
-  const edges = new Map<string, readonly [number, number]>()
-  faces.forEach(({ vertices }, face) => {
-    for (let side = 0; side < 3; side++) {
-      const a = vertices[side], b = vertices[(side + 1) % 3]
-      const key = a < b ? `${a}/${b}` : `${b}/${a}`
-      const previous = edges.get(key)
-      if (previous) {
-        neighbours[face][side] = previous[0]
-        neighbours[previous[0]][previous[1]] = face
-      } else edges.set(key, [face, side])
-    }
-  })
-  const occupied = (slab: number, face: number) => {
-    if (slab < 0 || slab >= slabs.length || face < 0) return false
+  const occupied = (slab: number, cell: CutoutLayout['faces'][number] | undefined) => {
+    if (slab < 0 || slab >= slabs.length || !cell) return false
     const { sheet, kind } = slabs[slab]
-    const cell = faces[face]
     const tpu = kind === 'base' || (kind === 'recess'
       ? !cell.outerCutout
       : cell.band === (sheet % 2 === 0 ? 0 : 2))
     return material === 'TPU' ? tpu : !tpu
   }
-  const caps = new Map<string, number[][]>()
-  const horizontal: { boundary: number; above: boolean; triangles: number[][] }[] = []
-  for (let boundary = 0; boundary <= slabs.length; boundary++) for (const above of [false, true]) {
-    const selected = faces.map((_, face) => above
-      ? occupied(boundary - 1, face) && !occupied(boundary, face)
-      : occupied(boundary, face) && !occupied(boundary - 1, face))
-    if (!selected.some(Boolean)) continue
-    const key = selected.map(value => value ? '1' : '0').join('')
-    let triangles = caps.get(key)
-    if (!triangles) { triangles = triangulateExposedRegion(layout, neighbours, selected); caps.set(key, triangles) }
-    horizontal.push({ boundary, above, triangles })
-  }
   const positions: number[] = []
   const indices: number[] = []
-  const vertices = new Map<number, number>()
-  const vertex = (point: number, boundary: number) => {
-    const key = boundary * points.length + point
+  const vertices = new Map<string, number>()
+  const vertex = (point: readonly [number, number], boundary: number) => {
+    const x = Math.fround(point[0]), y = Math.fround(point[1])
+    const key = `${x}/${y}/${boundary}`
     const existing = vertices.get(key)
     if (existing !== undefined) return existing
     const index = positions.length / 3
-    positions.push(points[point][0], points[point][1], layerBoundaries[boundary] * p.layerHeight)
+    positions.push(x, y, layerBoundaries[boundary] * p.layerHeight)
     vertices.set(key, index)
     return index
   }
-  for (let slab = 0; slab < slabs.length; slab++) for (let face = 0; face < faces.length; face++) {
-    if (!occupied(slab, face)) continue
-    const ids = faces[face].vertices
-    for (let side = 0; side < 3; side++) {
-      if (occupied(slab, neighbours[face][side])) continue
-      const a = ids[side], b = ids[(side + 1) % 3]
-      const a0 = vertex(a, slab), b0 = vertex(b, slab), a1 = vertex(a, slab + 1), b1 = vertex(b, slab + 1)
-      indices.push(a0, b0, b1, a0, b1, a1)
+  for (let boundary = 0; boundary <= slabs.length; boundary++) {
+    // Every horizontal material interface touches exactly one membrane;
+    // use its footprint on both sides of that shared interface.
+    const adjacent = slabs[boundary - 1]?.kind !== 'separator' && boundary > 0 ? slabs[boundary - 1] : slabs[boundary]
+    const prepared = layouts[adjacent.sheet]
+    const { layout, neighbours, caps } = prepared
+    for (const above of [false, true]) {
+      const selected = layout.faces.map(cell => above
+        ? occupied(boundary - 1, cell) && !occupied(boundary, cell)
+        : occupied(boundary, cell) && !occupied(boundary - 1, cell))
+      if (!selected.some(Boolean)) continue
+      const key = selected.map(value => value ? '1' : '0').join('')
+      let triangles = caps.get(key)
+      if (!triangles) {
+        try { triangles = triangulateExposedRegion(layout, neighbours, selected) }
+        catch (cause) { throw new Error(`Pattern membrane ${adjacent.sheet + 1} could not be triangulated.`, { cause }) }
+        caps.set(key, triangles)
+      }
+      for (const [a, b, c] of triangles) {
+        const ids = [a, b, c].map(id => vertex(layout.points[id], boundary))
+        if (above) indices.push(...ids)
+        else indices.push(ids[2], ids[1], ids[0])
+      }
     }
   }
-  for (const { boundary, above, triangles } of horizontal) for (const [a, b, c] of triangles) {
-    if (above) indices.push(vertex(a, boundary), vertex(b, boundary), vertex(c, boundary))
-    else indices.push(vertex(c, boundary), vertex(b, boundary), vertex(a, boundary))
+  const quad = (a: number, b: number, c: number, d: number) => indices.push(a, b, c, a, c, d)
+  for (let slab = 0; slab < slabs.length; slab++) {
+    const { sheet, kind } = slabs[slab]
+    if (kind !== 'separator') {
+      const { layout, neighbours } = layouts[sheet]
+      for (let face = 0; face < layout.faces.length; face++) {
+        if (!occupied(slab, layout.faces[face])) continue
+        const ids = layout.faces[face].vertices
+        for (let side = 0; side < 3; side++) {
+          if (occupied(slab, layout.faces[neighbours[face][side]])) continue
+          const a = layout.points[ids[side]], b = layout.points[ids[(side + 1) % 3]]
+          quad(vertex(a, slab), vertex(b, slab), vertex(b, slab + 1), vertex(a, slab + 1))
+        }
+      }
+      continue
+    }
+    const offsets = [0, p.outerConnector, p.bandWidth - p.innerConnector, p.bandWidth]
+    const rings = material === 'TPU' ? (sheet % 2 === 0 ? [0, 1] : [2, 3]) : (sheet % 2 === 0 ? [1, 3] : [0, 2])
+    for (let ring = 0; ring < rings.length; ring++) {
+      const contour = (membrane: number, boundary: number) => {
+        const result: { u: number; id: number }[] = []
+        for (const { u } of layouts[membrane].layout.nodes) {
+          const id = vertex(cutoutContourPoint(p, u, offsets[rings[ring]]), boundary)
+          if (result[result.length - 1]?.id !== id) result.push({ u, id })
+        }
+        return result
+      }
+      const lower = contour(sheet, slab), upper = contour(sheet + 1, slab + 1)
+      const triangle = (a: number, b: number, c: number) => {
+        if (ring === 0) indices.push(a, b, c)
+        else indices.push(c, b, a)
+      }
+      let low = 0, high = 0
+      while (low < lower.length - 1 || high < upper.length - 1) {
+        const nextLow = lower[low + 1]?.u ?? Infinity, nextHigh = upper[high + 1]?.u ?? Infinity
+        if (Math.abs(nextLow - nextHigh) < 1e-10) {
+          triangle(lower[low].id, lower[low + 1].id, upper[high + 1].id)
+          triangle(lower[low].id, upper[high + 1].id, upper[high].id)
+          low++; high++
+        } else if (nextLow < nextHigh) {
+          triangle(lower[low].id, lower[low + 1].id, upper[high].id)
+          low++
+        } else {
+          triangle(lower[low].id, upper[high + 1].id, upper[high].id)
+          high++
+        }
+      }
+    }
   }
   const geometry = new BufferGeometry()
   geometry.name = material === 'TPU' ? 'shade-tpu' : 'separators-pla'
@@ -280,7 +337,7 @@ function buildPatternedBoundary(p: LampParameters, layout: CutoutLayout, materia
     membraneCount: sheets, separatorCount: sheets - 1,
     layerBoundaries, nominalLayerHeight: p.layerHeight,
     cutoutPattern: p.cutoutPattern, cutoutLayers: p.cutoutLayers,
-    cutoutSpacing: p.cutoutSpacing, cutoutEvery: p.cutoutEvery,
+    cutoutSpacing: p.cutoutSpacing, cutoutEvery: p.cutoutEvery, cutoutPhase: p.cutoutPhase,
     cutoutFace: 'top-odd-bottom-even', extraction: 'outside-perimeter-to-outward-open-separator',
     physicalValidation: 'pending',
   }
@@ -294,8 +351,15 @@ export function buildManufacturingGeometry(parameters: LampParameters, options: 
   const errors = manufacturingErrors(p)
   if (errors.length) throw new Error(errors.map(error => `${error.title}: ${error.detail}`).join('\n'))
   if (cutoutProfile(p).enabled) {
-    const layout = buildCutoutLayout(p)
-    return { tpu: buildPatternedBoundary(p, layout, 'TPU'), pla: buildPatternedBoundary(p, layout, 'PLA') }
+    const cache = new Map<string, PreparedLayout>()
+    const layouts = Array.from({ length: deriveLamp(p).sheets }, (_, sheet) => {
+      const activeSheet = cutoutRecessFace(p, sheet) === null ? 1 : sheet
+      const key = cutoutPhaseAt(p, activeSheet).toFixed(10)
+      let prepared = cache.get(key)
+      if (!prepared) { prepared = prepareLayout(buildCutoutLayout(p, activeSheet)); cache.set(key, prepared) }
+      return prepared
+    })
+    return { tpu: buildPatternedBoundary(p, layouts, 'TPU'), pla: buildPatternedBoundary(p, layouts, 'PLA') }
   }
   return { tpu: buildBoundary(p, 'TPU'), pla: buildBoundary(p, 'PLA') }
 }

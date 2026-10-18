@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
 import { patternSectionIntervals } from '@/lib/pattern-section'
-import { cutoutLayerRange, cutoutProfile } from '@/lib/cutout-patterns'
+import { cutoutLayerRange, cutoutPhaseAt, cutoutProfile } from '@/lib/cutout-patterns'
 import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
@@ -125,7 +125,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
         ref={shadeMaterial}
         userData={{ isTPUDiffuser: true }}
         onBeforeCompile={shader => applyPatternTransmission(shader, parameters, thinGlow)}
-        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v2' : 'shade-transmission-v2'}
+        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v3' : 'shade-transmission-v3'}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}
@@ -285,8 +285,7 @@ function sectionSurfaces(parameters: LampParameters) {
   const outer = parameters.width / 2000
   const inner = outer - parameters.bandWidth / 1000
   const { sheets } = deriveLamp(parameters)
-  const pattern = cutoutProfile(parameters)
-  const patternSection = pattern.enabled ? patternSectionIntervals(parameters, 1).map(([a, b]) => [a / 1000, b / 1000]) : []
+  const patternSections = new Map<string, [number, number][]>()
   const directRect = (material: 'tpu' | 'pla', a: number, b: number, y1: number, y2: number) => {
     if (b - a < 1e-10 || y2 - y1 < 1e-10) return
     data[material].push(a, y1, 0.000002, b, y1, 0.000002, b, y2, 0.000002, a, y1, 0.000002, b, y2, 0.000002, a, y2, 0.000002)
@@ -308,7 +307,12 @@ function sectionSurfaces(parameters: LampParameters) {
       const recessTop = bottom + recessLayers[1] * parameters.layerHeight / 1000
       rect('tpu', inner, outer, bottom, recessBottom)
       rect('tpu', inner, outer, recessTop, top)
-      const recesses = patternSection
+      const phase = cutoutPhaseAt(parameters, sheet).toFixed(10)
+      let recesses = patternSections.get(phase)
+      if (!recesses) {
+        recesses = patternSectionIntervals(parameters, sheet).map(([a, b]) => [a / 1000, b / 1000])
+        patternSections.set(phase, recesses)
+      }
       for (const [left, right] of [[-outer, -inner], [inner, outer]]) {
         const boundaries = [left, right, ...recesses.flat().filter(x => x > left && x < right)].sort((a, b) => a - b)
         for (let index = 0; index < boundaries.length - 1; index++) {

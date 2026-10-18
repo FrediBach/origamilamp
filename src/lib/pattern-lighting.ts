@@ -20,7 +20,7 @@ export function patternLightingKey(p: LampParameters) {
     p.shape, p.width, p.depth, p.height, p.sides, p.pleats, p.bandWidth, p.cornerRadius,
     p.twist, p.modulation, p.expansion, p.layerHeight, p.tpuLayers, p.separatorLayers,
     p.innerConnector, p.outerConnector, p.extrusionWidth, p.cutoutPattern,
-    p.cutoutCount, p.cutoutSpacing, p.cutoutEvery, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
+    p.cutoutCount, p.cutoutSpacing, p.cutoutEvery, p.cutoutPhase, p.cutoutDepth, p.cutoutLayers, deriveMounting(p).lowerY,
     deriveLighting(p).sources,
   ])
 }

@@ -7,7 +7,7 @@ import { WOOD_FINISHES } from './wood'
 import { cutoutProfile } from './cutout-patterns'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutSpacing', 'cutoutEvery', 'cutoutDepth', 'cutoutLayers'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutSpacing', 'cutoutEvery', 'cutoutPhase', 'cutoutDepth', 'cutoutLayers'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -49,6 +49,9 @@ export function serializeDesign(parameters: LampParameters): string {
         spacingPercent: parameters.cutoutSpacing,
         outsideGapMillimetres: cutoutProfile(parameters).gapMm,
         everyMembranes: parameters.cutoutEvery,
+        phasePerMembranePercent: parameters.cutoutPhase,
+        phaseReference: 'One pattern repeat; zero offset at the first unclamped membrane, advancing across every membrane including skipped ones.',
+        rectangleInnerCornerRadiusMillimetres: parameters.cutoutPattern === 'rectangles' ? cutoutProfile(parameters).rectangleCornerMm : 0,
         schedule: 'Start at the first unclamped membrane, then repeat at this membrane interval. Skipped membranes and both clamped ends stay full thickness.',
         depthPercent: parameters.cutoutDepth,
         remainingTPULayers: parameters.cutoutLayers,
@@ -163,6 +166,9 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
 Spacing: ${p.cutoutSpacing}% of each repeat, ${cutoutProfile(p).gapMm.toFixed(2)} mm between cutout mouths along the outside edge.
 Pattern every ${p.cutoutEvery} membrane(s), starting at the first unclamped membrane.
 This interval counts folded membranes, not individual printer layers. Skipped membranes remain full thickness.
+Phase advance: ${p.cutoutPhase}% of one pattern repeat per membrane, starting at zero
+on the first unclamped membrane. Skipped membranes count toward the phase advance.
+${p.cutoutPattern === 'rectangles' ? `Rectangle inner corners are rounded to ${cutoutProfile(p).rectangleCornerMm.toFixed(2)} mm radius; their outside mouths remain open.` : ''}
 Remaining patterned TPU: ${p.cutoutLayers} complete layer(s), ${(p.cutoutLayers * p.layerHeight).toFixed(3)} mm; these are NOT through-holes.
 Recesses open ONLY at the outside edge. Selected odd-indexed membranes have top
 recesses, connected to the separator above; selected even-indexed membranes have

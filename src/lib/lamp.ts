@@ -27,6 +27,7 @@ export interface LampParameters {
   cutoutCount: number
   cutoutSpacing: number
   cutoutEvery: number
+  cutoutPhase: number
   cutoutDepth: number
   cutoutLayers: number
   innerConnector: number
@@ -68,7 +69,7 @@ export const DEFAULT_PARAMETERS: LampParameters = {
   sides: 6, pleats: 24, bandWidth: 22, cornerRadius: 30,
   twist: 0, modulation: 0, expansion: 100,
   layerHeight: 0.2, tpuLayers: 2, separatorLayers: 2,
-  cutoutPattern: 'none', cutoutCount: 12, cutoutSpacing: 30, cutoutEvery: 1, cutoutDepth: 55, cutoutLayers: 1,
+  cutoutPattern: 'none', cutoutCount: 12, cutoutSpacing: 30, cutoutEvery: 1, cutoutPhase: 0, cutoutDepth: 55, cutoutLayers: 1,
   innerConnector: 1.2, outerConnector: 1.2, extrusionWidth: 0.4,
   bedWidth: 256, bedDepth: 256, bedHeight: 256,
   lightDiameter: 32, lightSource: 'led', attachment: 'bolted', lightIntensity: 100, lightTemperature: 2700, lightFlicker: 0,
@@ -121,9 +122,10 @@ export function validateLamp(p: LampParameters): Diagnostic[] {
     || !Number.isInteger(p.cutoutCount) || p.cutoutCount < 4 || p.cutoutCount > 32
     || typeof p.cutoutSpacing !== 'number' || p.cutoutSpacing < 5 || p.cutoutSpacing > 80
     || !Number.isInteger(p.cutoutEvery) || p.cutoutEvery < 1 || p.cutoutEvery > 24
+    || typeof p.cutoutPhase !== 'number' || p.cutoutPhase < -100 || p.cutoutPhase > 100
     || typeof p.cutoutDepth !== 'number' || p.cutoutDepth < 10 || p.cutoutDepth > 75
     || !Number.isInteger(p.cutoutLayers) || p.cutoutLayers < 1 || p.cutoutLayers > 19) {
-    add('cutout-range', 'error', 'Light pattern setting out of range', 'Choose no pattern, triangles, half circles or rectangles; use 4–32 repeats, 5–80% spacing, every 1–24 membranes, 10–75% depth and 1–19 remaining TPU layers.')
+    add('cutout-range', 'error', 'Light pattern setting out of range', 'Choose no pattern, triangles, half circles or rectangles; use 4–32 repeats, 5–80% spacing, every 1–24 membranes, −100–100% phase per membrane, 10–75% depth and 1–19 remaining TPU layers.')
   } else if (p.cutoutPattern !== 'none') {
     if (p.cutoutLayers >= p.tpuLayers) add('cutout-thickness', 'error', 'Patterns need a thinner membrane', 'Remaining TPU layers must be at least one and fewer than the full membrane layers. Increase TPU layers in Print setup or reduce the pattern layers.')
     else if (p.pleats < 2) add('cutout-sheets', 'error', 'Patterns need active folds', 'Use at least two full pleats. The first and last membranes stay full thickness for the clamps.')

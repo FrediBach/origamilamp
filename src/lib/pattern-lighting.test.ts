@@ -5,6 +5,7 @@ import { buildExpandedGeometry } from './preview-geometry'
 import { buildPatternLightMap, buildPatternLightMaps, createOpticalCaster, patternLightingKey, transmissionBefore } from './pattern-lighting'
 import { deriveLighting } from './lighting'
 import { applyPatternTransmission } from './shade-material'
+import { cutoutProfile } from './cutout-patterns'
 
 const pattern: LampParameters = {
   ...DEFAULT_PARAMETERS, shape: 'circle', pleats: 4, height: 80,
@@ -98,8 +99,77 @@ describe('patterned light transport', () => {
     } finally { narrow.dispose(); wide.dispose(); geometry.dispose() }
   })
 
-  it('uses the same spacing, cadence and joint thickness in the visible material', () => {
-    const p = { ...pattern, cutoutSpacing: 60, cutoutEvery: 3 }
+  it.each([-100, -50, -25, 25, 50, 100])('moves optical recesses by %i%% of a repeat per physical membrane, including skipped sheets and wrapping', cutoutPhase => {
+    const p = { ...pattern, cutoutPhase, cutoutSpacing: 60 }
+    const geometry = buildExpandedGeometry(p)
+    const wrap = (value: number) => ((value % 1) + 1) % 1
+    try {
+      for (const cutoutEvery of [1, 2, 3]) {
+        const caster = createOpticalCaster({ ...p, cutoutEvery }, geometry)
+        try {
+          for (let sheet = 1; sheet < p.pleats * 2 - 1; sheet++) {
+            const center = wrap((0.5 + (sheet - 1) * cutoutPhase / 100) / p.cutoutCount)
+            const centerRay = rayThroughPrintPoint(geometry, sheet, center, 0.1)
+            const gapRay = rayThroughPrintPoint(geometry, sheet, wrap(center + 0.5 / p.cutoutCount), 0.1)
+            expect(caster.trace(centerRay.origin, centerRay.direction)[0].thickness).toBe((sheet - 1) % cutoutEvery === 0 ? 0.2 : 0.8)
+            expect(caster.trace(gapRay.origin, gapRay.direction)[0].thickness).toBe(0.8)
+          }
+        } finally { caster.dispose() }
+      }
+    } finally { geometry.dispose() }
+  })
+
+  it('evaluates each neighbouring membrane at its own phase in a shared outer crease', () => {
+    const p = { ...pattern, cutoutPhase: 50, cutoutSpacing: 60 }
+    const geometry = buildExpandedGeometry(p)
+    const caster = createOpticalCaster(p, geometry)
+    const skipped = createOpticalCaster({ ...p, cutoutEvery: 2 }, geometry)
+    const thicknessAt = (source: ReturnType<typeof createOpticalCaster>, u: number) => {
+      const ray = rayThroughPrintPoint(geometry, 2, u, 0.02)
+      return source.trace(ray.origin, ray.direction)[0].thickness
+    }
+    const separator = p.separatorLayers * p.layerHeight
+    try {
+      // Sheet 2 is half a repeat ahead of sheet 1; sheet 3 is a full repeat
+      // ahead. Their disjoint recesses must each contribute their own depth.
+      expect(thicknessAt(caster, 0.25)).toBeCloseTo(0.2 + 0.8 + separator)
+      expect(thicknessAt(caster, 0.375)).toBeCloseTo(0.8 + 0.2 + separator)
+      expect(thicknessAt(caster, 0.3125)).toBeCloseTo(1.6 + separator)
+      expect(thicknessAt(skipped, 0.25)).toBeCloseTo(1.6 + separator)
+      expect(thicknessAt(skipped, 0.375)).toBeCloseTo(0.8 + 0.2 + separator)
+    } finally { skipped.dispose(); caster.dispose(); geometry.dispose() }
+  })
+
+  it.each([10, 80])('rounds the inside rectangle corners in optical transmission at %i%% spacing', cutoutSpacing => {
+    const p: LampParameters = { ...pattern, cutoutPattern: 'rectangles', cutoutCount: 16, cutoutSpacing, cutoutPhase: 25 }
+    const profile = cutoutProfile(p)
+    const geometry = buildExpandedGeometry(p)
+    const caster = createOpticalCaster(p, geometry)
+    const sheet = 2
+    const center = (0.5 + p.cutoutPhase / 100) / p.cutoutCount
+    const r = profile.rectangleCornerMm
+    const x = profile.rectangleSideHalfWidthMm - r + r * Math.SQRT1_2
+    const cornerDepth = profile.depthMm - r + r * Math.SQRT1_2
+    const thicknessAt = (u: number, depth: number) => {
+      const ray = rayThroughPrintPoint(geometry, sheet, u, depth / p.bandWidth)
+      return caster.trace(ray.origin, ray.direction)[0].thickness
+    }
+    try {
+      // The centre keeps its flat inner edge. On either side the quarter-circle
+      // corner retains full TPU where a square rectangle would still be thin.
+      expect(thicknessAt(center, profile.depthMm - 0.1)).toBe(0.2)
+      for (const side of [-1, 1]) {
+        const u = center + side * x / profile.outerPerimeterMm
+        expect(thicknessAt(u, cornerDepth - 0.1)).toBe(0.2)
+        expect(thicknessAt(u, (cornerDepth + profile.depthMm) / 2)).toBe(0.8)
+        expect(thicknessAt(u, 0.1 * p.bandWidth)).toBe(0.2)
+      }
+    } finally { caster.dispose(); geometry.dispose() }
+  })
+
+  it('uses the same spacing, cadence, phase, rounded corners and joint thickness in the visible material', () => {
+    const p = { ...pattern, cutoutSpacing: 60, cutoutEvery: 3, cutoutPhase: -25 }
+    const profile = cutoutProfile(p)
     const shader = {
       uniforms: {}, vertexShader: '#include <begin_vertex>',
       fragmentShader: '#include <lights_fragment_begin>\n#include <emissivemap_fragment>',
@@ -108,9 +178,13 @@ describe('patterned light transport', () => {
     applyPatternTransmission(shader, p, glow)
     expect(shader.uniforms.cutoutProfile.value).toEqual([0.2, 3, 0.8, 0.2])
     expect(shader.uniforms.cutoutJoining.value).toEqual([p.separatorLayers * p.layerHeight, p.outerConnector / p.bandWidth])
+    expect(shader.uniforms.cutoutPlacement.value).toEqual([-0.25, profile.mouthMm / 2, profile.rectangleSideHalfWidthMm, profile.rectangleCornerMm])
     expect(shader.vertexShader).toContain('vCutoutJoin = cutoutJoin;')
     expect(shader.fragmentShader).toContain('mod(floor(sheet + 0.5) - 1.0, cutoutProfile.y)')
     expect(shader.fragmentShader).toContain('cutoutMask(vCutoutJoin)')
+    expect(shader.fragmentShader).toContain('(floor(sheet + 0.5) - 1.0) * cutoutPlacement.x')
+    expect(shader.fragmentShader).toContain('fract(vCutoutCoord.x * cutoutSettings.x - phase)')
+    expect(shader.fragmentShader).toContain('sqrt(max(0.0, cutoutPlacement.w * cutoutPlacement.w - offset * offset))')
     expect(shader.fragmentShader).toContain('neighbourThickness + cutoutJoining.x')
     const plain = { uniforms: {}, vertexShader: '', fragmentShader: '#include <emissivemap_fragment>' } as THREE.WebGLProgramParametersWithUniforms
     applyPatternTransmission(plain, { ...p, cutoutPattern: 'none' }, glow)
@@ -208,6 +282,7 @@ describe('patterned light transport', () => {
     expect(patternLightingKey({ ...pattern, cutoutDepth: 30 })).not.toBe(patternLightingKey(pattern))
     expect(patternLightingKey({ ...pattern, cutoutSpacing: 60 })).not.toBe(patternLightingKey(pattern))
     expect(patternLightingKey({ ...pattern, cutoutEvery: 3 })).not.toBe(patternLightingKey(pattern))
+    expect(patternLightingKey({ ...pattern, cutoutPhase: 25 })).not.toBe(patternLightingKey(pattern))
   })
 
   it('does not crash the viewer on an invalid intermediate mesh', () => {

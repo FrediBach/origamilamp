@@ -27,6 +27,7 @@ export function applyPatternTransmission(shader: WebGLProgramParametersWithUnifo
   shader.uniforms.cutoutSettings = { value: [profile.count, profile.depthMm, parameters.bandWidth, parameters.pleats * 2 - 1] }
   shader.uniforms.cutoutProfile = { value: [profile.mouthFraction / 2, profile.every, profile.normalThickness, profile.remainingThickness] }
   shader.uniforms.cutoutJoining = { value: [parameters.separatorLayers * parameters.layerHeight, parameters.outerConnector / parameters.bandWidth] }
+  shader.uniforms.cutoutPlacement = { value: [profile.phaseStep, profile.mouthMm / 2, profile.rectangleSideHalfWidthMm, profile.rectangleCornerMm] }
   shader.uniforms.cutoutShape = { value: !profile.enabled ? -1 : parameters.cutoutPattern === 'triangles' ? 0 : parameters.cutoutPattern === 'half-circles' ? 1 : 2 }
   shader.vertexShader = 'attribute vec3 cutoutCoord; attribute float cutoutJoin; varying vec3 vCutoutCoord; varying float vCutoutJoin;\n' + shader.vertexShader
   shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvCutoutCoord = cutoutCoord;\nvCutoutJoin = cutoutJoin;')
@@ -35,19 +36,34 @@ export function applyPatternTransmission(shader: WebGLProgramParametersWithUnifo
     uniform vec4 cutoutSettings;
     uniform vec4 cutoutProfile;
     uniform vec2 cutoutJoining;
+    uniform vec4 cutoutPlacement;
     uniform float cutoutShape;
     varying vec3 vCutoutCoord;
     varying float vCutoutJoin;
     float cutoutMask(float sheet) {
       if (cutoutShape < -0.5 || sheet < 0.5 || sheet >= cutoutSettings.w - 0.5) return 0.0;
       if (mod(floor(sheet + 0.5) - 1.0, cutoutProfile.y) > 0.5) return 0.0;
-      float across = abs(fract(vCutoutCoord.x * cutoutSettings.x) - 0.5) / cutoutProfile.x;
-      float profile = cutoutShape < 0.5 ? max(0.0, 1.0 - across)
-        : cutoutShape < 1.5 ? sqrt(max(0.0, 1.0 - across * across))
-        : clamp((1.0 - across) / 0.04, 0.0, 1.0);
+      // Physical membrane indices preserve the phase increment across skipped
+      // sheets. A shared crease calls this again with its neighbour's index.
+      float phase = (floor(sheet + 0.5) - 1.0) * cutoutPlacement.x;
+      float across = abs(fract(vCutoutCoord.x * cutoutSettings.x - phase) - 0.5) / cutoutProfile.x;
+      float depth = cutoutSettings.y;
+      if (cutoutShape < 0.5) depth *= max(0.0, 1.0 - across);
+      else if (cutoutShape < 1.5) depth *= sqrt(max(0.0, 1.0 - across * across));
+      else {
+        float x = across * cutoutPlacement.y;
+        float cornerStart = cutoutPlacement.z - cutoutPlacement.w;
+        if (x > cutoutPlacement.z) {
+          depth = max(0.0, (cutoutPlacement.y - x) * (depth - cutoutPlacement.w)
+            / (cutoutPlacement.y - cutoutPlacement.z));
+        } else if (x > cornerStart) {
+          float offset = x - cornerStart;
+          depth = depth - cutoutPlacement.w + sqrt(max(0.0, cutoutPlacement.w * cutoutPlacement.w - offset * offset));
+        }
+      }
       // Both sheet faces release into an outside-open PLA separator. Sheet
       // parity changes the print face, never the radial opening of the recess.
-      float distanceToEdge = cutoutSettings.y * profile - cutoutSettings.z * vCutoutCoord.y;
+      float distanceToEdge = depth - cutoutSettings.z * vCutoutCoord.y;
       float aa = max(fwidth(distanceToEdge), 0.025);
       return (1.0 - step(1.0, across)) * smoothstep(-aa, aa, distanceToEdge);
     }

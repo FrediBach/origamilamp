@@ -22,6 +22,7 @@ export function cutoutProfile(p: LampParameters) {
   const gapFraction = Math.max(5, Math.min(80, Number.isFinite(p.cutoutSpacing) ? p.cutoutSpacing : 30)) / 100
   const mouthFraction = 1 - gapFraction
   const every = Math.max(1, Math.min(24, Math.round(Number.isFinite(p.cutoutEvery) ? p.cutoutEvery : 1)))
+  const phaseStep = Math.max(-100, Math.min(100, Number.isFinite(p.cutoutPhase) ? p.cutoutPhase : 0)) / 100
   const outerPerimeterMm = outerPerimeter(p)
   const pitchMm = outerPerimeterMm / count
   const normalThickness = p.tpuLayers * p.layerHeight
@@ -31,11 +32,21 @@ export function cutoutProfile(p: LampParameters) {
     p.bandWidth * p.cutoutDepth / 100,
     p.bandWidth - Math.max(p.innerConnector, p.outerConnector) - webMm,
   ))
+  const rectangleSideHalfWidthMm = pitchMm * mouthFraction / 2 * (1 - RECTANGLE_DRAFT)
+  const rectangleCornerMm = Math.min(depthMm * .3, rectangleSideHalfWidthMm * .45)
   return {
     enabled: p.cutoutPattern !== 'none' && p.pleats > 1 && depthMm > 0 && remainingThickness > 0 && remainingThickness < normalThickness,
     count, depthMm, normalThickness, remainingThickness, halfWidth: mouthFraction / (2 * count), webMm,
-    gapFraction, mouthFraction, every, outerPerimeterMm, gapMm: pitchMm * gapFraction, mouthMm: pitchMm * mouthFraction,
+    gapFraction, mouthFraction, every, phaseStep, outerPerimeterMm, gapMm: pitchMm * gapFraction, mouthMm: pitchMm * mouthFraction,
+    rectangleSideHalfWidthMm, rectangleCornerMm,
   }
+}
+
+/** Phase is measured in repeat pitches and advances on every physical
+ * membrane, including skipped ones. Sheet one is the zero-phase reference. */
+export function cutoutPhaseAt(p: LampParameters, sheet: number): number {
+  const cycles = (sheet - 1) * cutoutProfile(p).phaseStep
+  return ((cycles % 1) + 1) % 1
 }
 
 /** Each active sheet recess faces the adjacent outward-open separator gap.
@@ -57,22 +68,28 @@ export function cutoutLayerRange(p: LampParameters, sheet: number): readonly [nu
 /** Depth of the open recess at u, measured inward from the outside perimeter.
  * Each section widens monotonically toward the mouth; even rectangles have
  * a small draft instead of an enclosed keyhole or a reverse-facing shoulder. */
-export function cutoutDepthAt(p: LampParameters, perimeterFraction: number): number {
+export function cutoutDepthAt(p: LampParameters, perimeterFraction: number, sheet = 1): number {
   const profile = cutoutProfile(p)
   if (!profile.enabled) return 0
-  const cycle = ((perimeterFraction * profile.count) % 1 + 1) % 1
+  const cycle = ((perimeterFraction * profile.count - cutoutPhaseAt(p, sheet)) % 1 + 1) % 1
   const across = Math.abs(cycle - 0.5) / (profile.mouthFraction / 2)
   if (across >= 1 - 1e-12) return 0
   if (p.cutoutPattern === 'triangles') return profile.depthMm * (1 - across)
   if (p.cutoutPattern === 'half-circles') return profile.depthMm * Math.sqrt(Math.max(0, 1 - across * across))
-  if (p.cutoutPattern === 'rectangles') return profile.depthMm * Math.min(1, (1 - across) / RECTANGLE_DRAFT)
+  if (p.cutoutPattern === 'rectangles') {
+    const halfMouth = profile.mouthMm / 2, side = profile.rectangleSideHalfWidthMm, radius = profile.rectangleCornerMm
+    const x = across * halfMouth
+    if (x <= side - radius) return profile.depthMm
+    if (x <= side) return profile.depthMm - radius + Math.sqrt(Math.max(0, radius * radius - (x - side + radius) ** 2))
+    return (halfMouth - x) * (profile.depthMm - radius) / (halfMouth - side)
+  }
   return 0
 }
 
 export function cutoutAt(p: LampParameters, sheet: number, perimeterFraction: number, radialInsetFraction: number): boolean {
   if (cutoutRecessFace(p, sheet) === null || radialInsetFraction < 0 || radialInsetFraction > 1) return false
   const fromFreeEdge = radialInsetFraction * p.bandWidth
-  const depth = cutoutDepthAt(p, perimeterFraction)
+  const depth = cutoutDepthAt(p, perimeterFraction, sheet)
   return depth > 0 && fromFreeEdge < depth
 }
 
@@ -121,7 +138,7 @@ export function cutoutContourPoint(p: LampParameters, perimeterFraction: number,
 
 /** Include curve tangencies, pattern tips and mouths explicitly. These are
  * boundary-aligned samples, not a voxel grid or a staircase approximation. */
-export function cutoutPerimeterSamples(p: LampParameters): number[] {
+export function cutoutPerimeterSamples(p: LampParameters, sheet = 1): number[] {
   const samples = [0, 1]
   if (p.shape === 'rounded-rectangle') {
     const arc = Math.PI * p.cornerRadius / 2
@@ -136,14 +153,18 @@ export function cutoutPerimeterSamples(p: LampParameters): number[] {
   } else {
     for (let i = 1; i < 128; i++) samples.push(i / 128)
   }
-  const { count, halfWidth, enabled } = cutoutProfile(p)
+  const { count, halfWidth, enabled, rectangleSideHalfWidthMm, rectangleCornerMm, outerPerimeterMm } = cutoutProfile(p)
+  const phase = cutoutPhaseAt(p, sheet) / count
+  const add = (u: number) => samples.push(((u % 1) + 1) % 1)
   if (enabled) for (let slot = 0; slot < count; slot++) {
-    const center = (slot + 0.5) / count
+    const center = (slot + 0.5) / count + phase
     if (p.cutoutPattern === 'half-circles') {
-      for (let step = 0; step <= 16; step++) samples.push(center + halfWidth * Math.cos(Math.PI * step / 16))
+      for (let step = 0; step <= 16; step++) add(center + halfWidth * Math.cos(Math.PI * step / 16))
     } else {
-      samples.push(center - halfWidth, center, center + halfWidth)
-      if (p.cutoutPattern === 'rectangles') samples.push(center - halfWidth * (1 - RECTANGLE_DRAFT), center + halfWidth * (1 - RECTANGLE_DRAFT))
+      add(center - halfWidth); add(center); add(center + halfWidth)
+      if (p.cutoutPattern === 'rectangles') for (const sign of [-1, 1]) for (let step = 0; step <= 8; step++) {
+        add(center + sign * (rectangleSideHalfWidthMm - rectangleCornerMm + rectangleCornerMm * Math.cos(Math.PI / 2 * step / 8)) / outerPerimeterMm)
+      }
     }
   }
   return samples.sort((a, b) => a - b).filter((value, index, all) => index === 0 || value - all[index - 1] > 1e-10)
@@ -164,13 +185,13 @@ export interface CutoutLayout {
 /** A conforming planar arrangement of the outside-open recess boundaries and
  * all connector edges. Crossing points split both neighbours, so extrusion
  * produces shared vertices without T-junctions or overlapping closed slabs. */
-export function buildCutoutLayout(p: LampParameters): CutoutLayout {
-  const samples = cutoutPerimeterSamples(p)
+export function buildCutoutLayout(p: LampParameters, sheet = 1): CutoutLayout {
+  const samples = cutoutPerimeterSamples(p, sheet)
   const boundaries = (depth: number) => [0, p.outerConnector, p.bandWidth - p.innerConnector, p.bandWidth, depth]
-  const nodes: CutoutNode[] = []
+  const rawNodes: CutoutNode[] = []
   for (let i = 0; i < samples.length - 1; i++) {
     const u0 = samples[i], u1 = samples[i + 1]
-    const depth0 = cutoutDepthAt(p, u0), depth1 = cutoutDepthAt(p, u1)
+    const depth0 = cutoutDepthAt(p, u0, sheet), depth1 = cutoutDepthAt(p, u1, sheet)
     const a = boundaries(depth0), b = boundaries(depth1)
     const splits = [0]
     for (let left = 0; left < a.length; left++) for (let right = left + 1; right < a.length; right++) {
@@ -181,10 +202,32 @@ export function buildCutoutLayout(p: LampParameters): CutoutLayout {
       if (t > 1e-9 && t < 1 - 1e-9) splits.push(t)
     }
     splits.sort((left, right) => left - right).filter((t, index, all) => index === 0 || t - all[index - 1] > 1e-9).forEach(t => {
-      nodes.push({ u: u0 + (u1 - u0) * t, depth: depth0 + (depth1 - depth0) * t })
+      rawNodes.push({ u: u0 + (u1 - u0) * t, depth: depth0 + (depth1 - depth0) * t })
     })
   }
-  nodes.push({ u: 1, depth: cutoutDepthAt(p, 1) })
+  rawNodes.push({ u: 1, depth: cutoutDepthAt(p, 1, sheet) })
+  // Distinct mathematical samples can become one float32 contour vertex
+  // while their recess tips round to opposite sides of a float32 boundary.
+  // Coalesce these sub-resolution angular strips BEFORE triangulation rather
+  // than dropping their inverted/sliver faces and leaving an open mesh.
+  const resolution = Math.max(p.width, p.depth) * 2 ** -22 / cutoutProfile(p).outerPerimeterMm
+  const anchors = new Set(cutoutPerimeterSamples({ ...p, cutoutPattern: 'none' }).map(u => u.toFixed(12)))
+  const fixedDepths = [0, p.outerConnector, p.bandWidth - p.innerConnector, p.bandWidth]
+  const snappedDepth = (depth: number) => fixedDepths.find(value => Math.abs(value - depth) < 1e-9)
+  const nodes: CutoutNode[] = []
+  for (const node of rawNodes) {
+    const previous = nodes[nodes.length - 1]
+    if (!previous || node.u - previous.u >= resolution) { nodes.push({ ...node }); continue }
+    const keepNext = node.u === 1 || (previous.u !== 0 && anchors.has(node.u.toFixed(12)))
+    // Retain exact contour tangencies and connector crossings whenever two
+    // nearby samples merge, even if those anchors came from different nodes.
+    previous.depth = snappedDepth(previous.depth) ?? snappedDepth(node.depth) ?? (keepNext ? node.depth : previous.depth)
+    if (keepNext) previous.u = node.u
+  }
+  // u=0 and u=1 are one physical vertex. A near-seam crossing can merge
+  // into only one end of the linear list, so apply its snap to both ends.
+  const first = nodes[0], last = nodes[nodes.length - 1]
+  first.depth = last.depth = snappedDepth(first.depth) ?? snappedDepth(last.depth) ?? first.depth
   const points: (readonly [number, number])[] = []
   const faces: CutoutFace[] = []
   const vertices = new Map<string, number>()
@@ -230,13 +273,18 @@ export function buildCutoutLayout(p: LampParameters): CutoutLayout {
  * linear boundaries as the printable solids. Intended for layer inspection. */
 export function cutoutPolygons(p: LampParameters, sheet: number): (readonly [number, number])[][] {
   if (cutoutRecessFace(p, sheet) === null) return []
-  const { nodes } = buildCutoutLayout(p)
+  const { nodes } = buildCutoutLayout(p, sheet)
+  // Begin in a gap so a recess crossing u=0 stays one complete polygon.
+  // The layout includes u=0 and u=1 as the same physical seam vertex.
+  const gap = nodes.findIndex(node => node.depth <= 1e-8)
+  const ring = nodes.slice(0, -1)
+  const ordered = [...ring.slice(gap), ...ring.slice(0, gap), ring[gap]]
   const polygons: (readonly [number, number])[][] = []
   let start = -1
-  for (let i = 0; i < nodes.length; i++) {
-    if (nodes[i].depth > 1e-8 && start < 0) start = Math.max(0, i - 1)
-    if (start >= 0 && (nodes[i].depth <= 1e-8 || i === nodes.length - 1)) {
-      const run = nodes.slice(start, i + 1)
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].depth > 1e-8 && start < 0) start = Math.max(0, i - 1)
+    if (start >= 0 && (ordered[i].depth <= 1e-8 || i === ordered.length - 1)) {
+      const run = ordered.slice(start, i + 1)
       const mouth = run.map(({ u }) => cutoutContourPoint(p, u, 0))
       const boundary = run.slice().reverse().map(({ u, depth }) => cutoutContourPoint(p, u, depth))
       const polygon = [...mouth, ...boundary].filter((point, index, all) => {
@@ -254,11 +302,13 @@ export function cutoutPolygons(p: LampParameters, sheet: number): (readonly [num
  * contour, although all recess mouths are outside. Short chords underestimate
  * arc width and preserve the existing two-extrusion-path safety allowance. */
 export function cutoutMinimumWeb(p: LampParameters): number {
-  const { count, halfWidth } = cutoutProfile(p)
+  const { count, halfWidth, every } = cutoutProfile(p)
+  const phases = new Set<number>([0])
+  for (let sheet = 1; sheet < p.pleats * 2 - 1; sheet += every) phases.add(Math.round(cutoutPhaseAt(p, sheet) * 1e10) / 1e10)
   let minimum = Infinity
-  for (let slot = 0; slot < count; slot++) {
-    const from = (slot + 0.5) / count + halfWidth
-    const to = (slot + 1.5) / count - halfWidth
+  for (const phase of phases) for (let slot = 0; slot < count; slot++) {
+    const from = (slot + 0.5 + phase) / count + halfWidth
+    const to = (slot + 1.5 + phase) / count - halfWidth
     let length = 0
     let previous = cutoutContourPoint(p, from, p.bandWidth)
     for (let step = 1; step <= 16; step++) {
