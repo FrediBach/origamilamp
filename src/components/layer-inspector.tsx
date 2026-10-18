@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { ChevronLeft, ChevronRight, Layers3 } from 'lucide-react'
 import { deriveLamp, validateLamp, type LampParameters } from '@/lib/lamp'
+import { cutoutLayerRange, cutoutPolygons, cutoutProfile, cutoutRecessFace } from '@/lib/cutout-patterns'
 import './layer-inspector.css'
 
 const TPU = '#f1e4c9'
@@ -34,7 +35,7 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
   const [requestedLayer, setRequestedLayer] = useState(0)
   const d = deriveLamp(p)
   const errors = validateLamp(p).filter(item => item.status === 'error' &&
-    ['finite', 'dimensions', 'layers', 'contours', 'free-span', 'connectors', 'layer-height', 'values'].includes(item.id))
+    ['finite', 'dimensions', 'layers', 'contours', 'free-span', 'connectors', 'layer-height', 'values', 'cutout-range', 'cutout-thickness', 'cutout-sheets', 'cutout-web'].includes(item.id))
 
   if (errors.length) {
     return <div className="layer-inspector li-invalid" role="status">
@@ -51,8 +52,14 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
   const sheet = Math.floor(layer / stride)
   const withinBlock = layer % stride
   const membrane = withinBlock < p.tpuLayers
+  const pattern = cutoutProfile(p)
+  const recessFace = cutoutRecessFace(p, sheet)
+  const recessLayers = cutoutLayerRange(p, sheet)
+  const patternedSheet = recessLayers !== null
+  const recessedLayer = membrane && recessLayers !== null && withinBlock >= recessLayers[0] && withinBlock < recessLayers[1]
+  const recesses = recessedLayer ? cutoutPolygons(p, sheet) : []
   const outerJoin = sheet % 2 === 0
-  const layerKind = membrane ? 'Full TPU membrane' : `${outerJoin ? 'Outer' : 'Inner'} join + PLA separator`
+  const layerKind = membrane ? recessedLayer ? 'Patterned TPU + PLA recesses' : 'Full TPU membrane' : `${outerJoin ? 'Outer' : 'Inner'} join + PLA separator`
   const effectiveDepth = p.shape === 'circle' ? p.width : p.depth
   const margin = Math.max(p.width, effectiveDepth) * 0.13
   const outlineWidth = Math.max(p.width, effectiveDepth) * 0.003
@@ -90,6 +97,10 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
       <div className="li-jumps" aria-label="Example print layers">
         <span>Jump to</span>
         <button type="button" onClick={() => setRequestedLayer(0)}>Membrane</button>
+        {pattern.enabled && <>
+          <button type="button" onClick={() => setRequestedLayer(stride + p.cutoutLayers)}>Top pattern layer</button>
+          <button type="button" onClick={() => setRequestedLayer(2 * stride)}>Bottom pattern layer</button>
+        </>}
         <button type="button" onClick={() => setRequestedLayer(p.tpuLayers)}>Outer join</button>
         {d.separators > 1 && <button type="button" onClick={() => setRequestedLayer(stride + p.tpuLayers)}>Inner join</button>}
       </div>
@@ -101,18 +112,19 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
         {p.shape === 'polygon' ? <div className="li-unsupported"><Layers3 size={26} aria-hidden="true" /><p>Polygon contours are an appearance preview. Choose a circle or rounded rectangle to inspect exact printable offsets.</p></div> :
           <svg className="li-footprint" viewBox={`${-margin} ${-margin} ${p.width + 2 * margin} ${effectiveDepth + 2 * margin}`} role="img" aria-labelledby={`${id}-footprint-title ${id}-footprint-desc`}>
             <title id={`${id}-footprint-title`}>{layerKind}, top view</title>
-            <desc id={`${id}-footprint-desc`}>{membrane ? 'The entire washer-shaped footprint is TPU, with an open central aperture.' : `TPU occupies the ${outerJoin ? 'outer' : 'inner'} joining rim. PLA occupies the remaining membrane footprint and can be removed from the ${outerJoin ? 'central aperture' : 'outside'}.`} Outer footprint {p.width} by {effectiveDepth} millimetres, membrane band {p.bandWidth} millimetres.</desc>
+            <desc id={`${id}-footprint-desc`}>{recessedLayer ? `PLA fills the ${recessFace} pattern recesses at the outer edge, connected to the separator ${recessFace === 'top' ? 'above' : 'below'}. A continuous TPU membrane remains ${recessFace === 'top' ? 'below' : 'above'} the recesses. All patterned PLA pulls out from outside.` : membrane ? 'The entire washer-shaped footprint is TPU, with an open central aperture.' : `TPU occupies the ${outerJoin ? 'outer' : 'inner'} joining rim. PLA occupies the remaining membrane footprint and can be removed from the ${outerJoin ? 'central aperture' : 'outside'}.`} Outer footprint {p.width} by {effectiveDepth} millimetres, membrane band {p.bandWidth} millimetres.</desc>
             <path d={ringPath(p, 0, p.bandWidth)} fill={membrane ? TPU : PLA} fillRule="evenodd" stroke={INK} strokeWidth={outlineWidth} />
+            {recesses.map((polygon, index) => <polygon key={index} points={polygon.map(([px, py]) => `${px + p.width / 2},${effectiveDepth / 2 - py}`).join(' ')} fill={PLA} stroke={INK} strokeWidth={outlineWidth * 0.65} />)}
             {!membrane && <path d={ringPath(p, outerJoin ? 0 : p.bandWidth - p.innerConnector, outerJoin ? p.outerConnector : p.bandWidth)} fill={TPU} fillRule="evenodd" stroke={INK} strokeWidth={outlineWidth * 0.65} />}
             <text x={p.width / 2} y={-margin * 0.38} textAnchor="middle" fill={INK} fontSize={diagramText}>{p.width} mm</text>
             <text x={p.width / 2} y={effectiveDepth / 2 - diagramText * 0.15} textAnchor="middle" fill={INK} fontSize={diagramText}>Open aperture</text>
             <text x={p.width / 2} y={effectiveDepth / 2 + diagramText * 1.3} textAnchor="middle" fill={INK} fontSize={diagramText * 0.82}>{mm(p.width - 2 * p.bandWidth)}{p.shape !== 'circle' ? ` × ${mm(effectiveDepth - 2 * p.bandWidth)}` : ' diameter'}</text>
-            <text x={p.width / 2} y={effectiveDepth + margin * 0.68} textAnchor="middle" fill={INK} fontSize={diagramText * 0.86}>{membrane ? `${p.bandWidth} mm full membrane band` : `${outerJoin ? p.outerConnector : p.innerConnector} mm TPU ${outerJoin ? 'outer' : 'inner'} join`}</text>
+            <text x={p.width / 2} y={effectiveDepth + margin * 0.68} textAnchor="middle" fill={INK} fontSize={diagramText * 0.86}>{recessedLayer ? 'PLA exits at the outer edge' : membrane ? `${p.bandWidth} mm full membrane band` : `${outerJoin ? p.outerConnector : p.innerConnector} mm TPU ${outerJoin ? 'outer' : 'inner'} join`}</text>
           </svg>}
       </section>
 
       <section className="li-diagram-panel" aria-labelledby={`${id}-section-heading`}>
-        <div className="li-panel-heading"><h4 id={`${id}-section-heading`}>Through the wall</h4><span>Section · Z enlarged</span></div>
+        <div className="li-panel-heading"><h4 id={`${id}-section-heading`}>Through the wall</h4><span>{pattern.enabled ? 'Pattern centre · Z enlarged' : 'Section · Z enlarged'}</span></div>
         <svg className="li-section" viewBox="0 0 320 270" role="img" aria-labelledby={`${id}-section-title ${id}-section-desc`}>
           <title id={`${id}-section-title`}>Alternating rim joins in section</title>
           <desc id={`${id}-section-desc`}>Membranes {startSheet + 1} to {startSheet + shownSheets} of {d.sheets}, from bottom to top. TPU sheets are connected alternately on the outer right edge and inner left edge. PLA fills each remaining gap. The outlined horizontal strip is selected print layer {layer + 1}. Vertical thickness is enlarged for inspection.</desc>
@@ -121,8 +133,10 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
             const sheetBottom = sectionBottom - index * stride * layerPx
             const connectOuter = actualSheet % 2 === 0
             const connectorPx = sectionWidth * (connectOuter ? p.outerConnector : p.innerConnector) / p.bandWidth
+            const sectionRecess = cutoutLayerRange(p, actualSheet)
             return <g key={actualSheet}>
               <rect x={x} y={sheetBottom - membranePx} width={sectionWidth} height={membranePx} fill={TPU} stroke={INK} strokeWidth="0.65" />
+              {sectionRecess && <rect x={x + sectionWidth * (1 - pattern.depthMm / p.bandWidth)} y={sheetBottom - sectionRecess[1] * layerPx} width={sectionWidth * pattern.depthMm / p.bandWidth} height={(sectionRecess[1] - sectionRecess[0]) * layerPx} fill={PLA} stroke={INK} strokeWidth="0.65" />}
               {index < shownSheets - 1 && <>
                 <rect x={x} y={sheetBottom - membranePx - separatorPx} width={sectionWidth} height={separatorPx} fill={PLA} stroke={INK} strokeWidth="0.65" />
                 <rect x={connectOuter ? x + sectionWidth - connectorPx : x} y={sheetBottom - membranePx - separatorPx} width={connectorPx} height={separatorPx} fill={TPU} stroke={INK} strokeWidth="0.65" />
@@ -148,7 +162,7 @@ export function LayerInspector({ parameters: p }: { parameters: LampParameters }
 
     <div className="li-detail" aria-live="polite" aria-atomic="true">
       <strong>{membrane ? `Membrane ${sheet + 1} of ${d.sheets}` : `Gap ${sheet + 1} of ${d.separators} · membranes ${sheet + 1} and ${sheet + 2}`}</strong>
-      <p>{membrane ? `All ${p.tpuLayers} layers of this ${mm(d.membraneThickness)} membrane use TPU across the full band. The open centre stays empty.` : `This ${mm(d.separatorThickness)} gap contains both materials: a ${mm(outerJoin ? p.outerConnector : p.innerConnector)} TPU join at the ${outerJoin ? 'outer' : 'inner'} rim and PLA everywhere else in the band. Remove this separator from ${outerJoin ? 'inside the central aperture' : 'outside the shade'}.`}</p>
+      <p>{recessedLayer ? `PLA fills the ${recessFace} recesses and joins the separator ${recessFace === 'top' ? 'above' : 'below'}. Peel it out from outside the shade. ${p.cutoutLayers} continuous TPU layer(s), ${mm(pattern.remainingThickness)}, remain ${recessFace === 'top' ? 'below' : 'above'} each pattern.` : membrane ? patternedSheet ? `This layer is continuous TPU. The ${recessFace === 'top' ? 'upper' : 'lower'} ${p.tpuLayers - p.cutoutLayers} layer(s) contain the outside-opening pattern recesses; the inner fold stays ${mm(d.membraneThickness)} thick.` : `All ${p.tpuLayers} layers of this ${mm(d.membraneThickness)} membrane use TPU across the full band. The open centre stays empty.` : `This ${mm(d.separatorThickness)} gap contains both materials: a ${mm(outerJoin ? p.outerConnector : p.innerConnector)} TPU join at the ${outerJoin ? 'outer' : 'inner'} rim and PLA everywhere else in the band. Remove this separator from ${outerJoin ? 'inside the central aperture' : 'outside the shade'}.`}</p>
     </div>
     <p className="li-note">Nominal material layout · {mm(d.compressedHeight)} compressed height · use the same first-layer height. Separator release and folding still require a calibration print.</p>
   </div>

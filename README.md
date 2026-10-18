@@ -77,6 +77,14 @@ LED and bulb diameters are remembered separately and the selected diameter is us
 
 ## Construction and units
 
+In **Form → Light patterns**, optionally choose **Triangles**, **Half circles**, or **Rectangles**. These are thinner TPU regions, not open holes. Set the repeat count (4–32), depth (10–75% of the membrane band), and remaining whole TPU layers. The remaining layer count must be at least one and less than the full membrane count. Patterns start disabled, including when opening older recipes.
+
+Patterns are part of both manufacturing STLs and open **only at the outside perimeter**. Odd-indexed active membranes have top recesses; even-indexed active membranes have bottom recesses. These paired recesses join the same outward-opening PLA separator between the sheets. Continuous TPU remains below top recesses and above bottom recesses, preserving the outer joins on the opposite face. Inner folds and the two terminal clamping membranes stay full thickness. Recesses widen toward their outside mouths; rectangular recesses have a small release draft. Depth is limited before the inner connector with an additional extrusion-width web. The layer inspector's **Top pattern layer** and **Bottom pattern layer** jumps show both mixed-material footprints; its section passes through a pattern centre. The 3D section shows the actual centre-plane intersection. Regenerate STL files exported with the earlier alternating-inner/outer pattern implementation; loading a saved recipe now uses outside-only patterns.
+
+The patterned preview uses the remaining TPU thickness for its glow and traces light rays through the expanded folds to shade the floor, room and hardware. Absorption increases with thickness, oblique incidence and repeated membrane crossings; a source-size blur softens the projected patterns. Existing frame and furniture shadows still block the transmitted light. Light placement, rotation, intensity and flicker stay aligned with the shade. This is an optical approximation using eight stored crossing depths per ray; additional crossings in tightly compressed views are combined at the eighth. TPU scattering and transmission are not calibrated material measurements.
+
+Print the patterned calibration specimen before the full shade. Geometric connectivity and unobstructed extraction paths do not certify TPU/PLA adhesion, tear resistance, or real release force. Peel the recess tongues out with their separator and inspect every thin membrane. Selecting only one TPU layer for the full membrane, or leaving no active folding sheets, blocks patterned export until corrected.
+
 One full pleat has two membrane legs, so `N = 2 × fullPleats`. Closed-loop TPU membranes connect alternately at their outer and inner rims. Each gap contains the appropriate TPU joining band and a complementary removable PLA separator. Switching whole layers between materials would leave disconnected washers; this implementation explicitly assigns both materials within connector layers.
 
 Integer print-layer indices are the source of truth:
@@ -100,6 +108,10 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/lib/printability-fixes.ts` | Per-check correction candidates, revalidated against the other geometry constraints. |
 | `src/components/printability-checks.tsx` | Diagnostic rows, proposed adjustments, correction feedback, and undo. |
 | `src/lib/manufacturing.ts` | Deterministic compressed TPU/PLA boundary meshes and normal-offset contours. |
+| `src/lib/cutout-patterns.ts` | Shared edge-open pattern contours, recess footprints, print partition and minimum retained web. |
+| `src/components/pattern-controls.tsx` | Optional light patterns, repeat count, safe depth and remaining TPU layers. |
+| `src/lib/pattern-lighting.ts` | Thickness and incidence attenuation through expanded folds, stored as angular optical maps. |
+| `src/components/pattern-light-projection.tsx` | Transmitted point-light radiance on room, floor and hardware materials. |
 | `src/lib/preview-geometry.ts` | Separate approximate expanded surface, flat terminal gripping flanges, and active membrane contraction. |
 | `src/lib/mounting.ts` | Shared clamp dimensions, grip width, assembled opening and mounting eligibility. |
 | `src/lib/base.ts` | Wooden base compartment dimensions, internal space and assembly elevation. |
@@ -119,7 +131,7 @@ Manufacturing geometry is centered in XY, uses **millimetres and Z-up**, and beg
 | `src/components/ui/` | Reusable Radix-based button, slider, switch, tabs, and dialog components. |
 | `src/index.css` | Design tokens, responsive layout, typography, focus states, and reduced-motion handling. |
 
-The solid generator partitions each cross section into three normal-offset bands and each height interval into an integer print-layer slab. It emits only exterior faces of occupied cells, sharing boundary vertices across neighbours. This yields one continuous TPU solid and distinct PLA separator components without intersecting closed slabs, internal duplicate faces, or a dependency on slicer repair. The viewer and STL exporter use the same manufacturing generator.
+The solid generator partitions each cross section into three normal-offset bands and each height interval into an integer print-layer slab. With patterns, a shared planar partition follows the outer recess boundaries and connector edges; membrane slabs alternate between continuous-TPU/recess and recess/continuous-TPU according to the outward-opening separator's position. It emits only exterior faces of occupied cells, sharing boundary vertices across neighbours, and merges coplanar exposed regions to reduce mesh size. This yields one continuous TPU solid and distinct PLA separator components without intersecting closed slabs, internal duplicate faces, or a dependency on slicer repair. The viewer and STL exporter use the same manufacturing generator.
 
 Circle contours and rounded rectangles are supported for manufacture. Rounded rectangles preserve the corner centers while offsetting the corner arcs and straight edges; inner corners must remain rounded. The current conservative constraint is `bandWidth + 0.05 < cornerRadius < min(width, depth) / 2 − 0.05`. Invalid offsets, an aperture smaller than the prototype’s 20 mm minimum, and insufficient free membrane or connector widths block export. The 20 mm rule is a conservative software limit; it does not establish physical removability.
 

@@ -4,11 +4,15 @@ import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from '@/lib/lamp'
 import { buildManufacturingGeometry } from '@/lib/manufacturing'
+import { patternSectionIntervals } from '@/lib/pattern-section'
+import { cutoutLayerRange, cutoutProfile } from '@/lib/cutout-patterns'
 import { buildExpandedGeometry, previewFrameDimensions } from '@/lib/preview-geometry'
 import { deriveMounting, MOUNTING } from '@/lib/mounting'
 import { deriveBase } from '@/lib/base'
 import { deriveLighting, lightTemperatureColor } from '@/lib/lighting'
-import { applyShadeTransmission } from '@/lib/shade-material'
+import { applyPatternTransmission } from '@/lib/shade-material'
+import { patternLightingKey } from '@/lib/pattern-lighting'
+import { PatternLightProjection } from '@/components/pattern-light-projection'
 import { LampMounting } from '@/components/lamp-mounting'
 import { LampBase } from '@/components/lamp-base'
 import { LampLightSources, useShadeGlow } from '@/components/lamp-light-source'
@@ -92,7 +96,8 @@ function Box({ position, size, color, map, rotation, castShadow = true }: {
 }
 
 function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters' | 'lightOn'> & { floorY: number }) {
-  const geometry = useMemo(() => buildExpandedGeometry(parameters), [parameters])
+  const opticalKey = patternLightingKey(parameters)
+  const geometry = useMemo(() => buildExpandedGeometry(parameters), [opticalKey])
   const { width: w, depth: d } = useMemo(() => previewFrameDimensions(geometry), [geometry])
   useEffect(() => () => geometry.dispose(), [geometry])
   const wood = useWoodMaterials(parameters.frameWood)
@@ -100,6 +105,8 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
   const mounting = deriveMounting(parameters)
   const lighting = useMemo(() => deriveLighting(parameters), [parameters])
   const shadeGlow = useShadeGlow(parameters, lighting)
+  const thinGlow = useShadeGlow(parameters, lighting, true)
+  const patterned = cutoutProfile(parameters).enabled
   const shadeMaterial = useRef<THREE.MeshStandardMaterial>(null)
   // Spring rails sit beyond both flanges to pull the bellows apart.
   const lowerRailY = mounting.lowerRailY / 1000
@@ -114,9 +121,11 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
           silhouette in the ceiling spotlight's ordinary depth shadow map. */}
       <meshDistanceMaterial attach="customDistanceMaterial" depthWrite={false} colorWrite={false} />
       <meshStandardMaterial
+        key={patterned ? `${opticalKey}-${thinGlow.uuid}` : 'plain'}
         ref={shadeMaterial}
-        onBeforeCompile={applyShadeTransmission}
-        customProgramCacheKey={() => 'shade-transmission-v1'}
+        userData={{ isTPUDiffuser: true }}
+        onBeforeCompile={shader => applyPatternTransmission(shader, parameters, thinGlow)}
+        customProgramCacheKey={() => patterned ? 'shade-pattern-transmission-v1' : 'shade-transmission-v1'}
         color={colors[parameters.material]}
         map={paper}
         roughness={0.86}
@@ -137,6 +146,7 @@ function Lamp({ parameters, lightOn, floorY }: Pick<LampViewerProps, 'parameters
     ])}
     <LampBase parameters={parameters} frameWidth={w} frameDepth={d} frameMaterials={wood} />
     <LampLightSources parameters={parameters} lighting={lighting} lightOn={lightOn} shadeMaterial={shadeMaterial} />
+    <PatternLightProjection parameters={parameters} geometry={geometry} />
   </group>
 }
 
@@ -275,18 +285,38 @@ function sectionSurfaces(parameters: LampParameters) {
   const outer = parameters.width / 2000
   const inner = outer - parameters.bandWidth / 1000
   const { sheets } = deriveLamp(parameters)
+  const pattern = cutoutProfile(parameters)
+  const patternSection = pattern.enabled ? patternSectionIntervals(parameters, 1).map(([a, b]) => [a / 1000, b / 1000]) : []
+  const directRect = (material: 'tpu' | 'pla', a: number, b: number, y1: number, y2: number) => {
+    if (b - a < 1e-10 || y2 - y1 < 1e-10) return
+    data[material].push(a, y1, 0.000002, b, y1, 0.000002, b, y2, 0.000002, a, y1, 0.000002, b, y2, 0.000002, a, y2, 0.000002)
+  }
   const rect = (material: 'tpu' | 'pla', x1: number, x2: number, y1: number, y2: number) => {
     for (const sign of [-1, 1]) {
       const a = sign === 1 ? x1 : -x2
       const b = sign === 1 ? x2 : -x1
-      data[material].push(a, y1, 0.000002, b, y1, 0.000002, b, y2, 0.000002, a, y1, 0.000002, b, y2, 0.000002, a, y2, 0.000002)
+      directRect(material, a, b, y1, y2)
     }
   }
   for (let sheet = 0; sheet < sheets; sheet += 1) {
     const layer = sheet * (parameters.tpuLayers + parameters.separatorLayers)
     const bottom = layer * parameters.layerHeight / 1000
     const top = (layer + parameters.tpuLayers) * parameters.layerHeight / 1000
-    rect('tpu', inner, outer, bottom, top)
+    const recessLayers = cutoutLayerRange(parameters, sheet)
+    if (recessLayers) {
+      const recessBottom = bottom + recessLayers[0] * parameters.layerHeight / 1000
+      const recessTop = bottom + recessLayers[1] * parameters.layerHeight / 1000
+      rect('tpu', inner, outer, bottom, recessBottom)
+      rect('tpu', inner, outer, recessTop, top)
+      const recesses = patternSection
+      for (const [left, right] of [[-outer, -inner], [inner, outer]]) {
+        const boundaries = [left, right, ...recesses.flat().filter(x => x > left && x < right)].sort((a, b) => a - b)
+        for (let index = 0; index < boundaries.length - 1; index++) {
+          const a = boundaries[index], b = boundaries[index + 1], middle = (a + b) / 2
+          directRect(recesses.some(([start, end]) => middle >= start && middle <= end) ? 'pla' : 'tpu', a, b, recessBottom, recessTop)
+        }
+      }
+    } else rect('tpu', inner, outer, bottom, top)
     if (sheet === sheets - 1) continue
     const next = (layer + parameters.tpuLayers + parameters.separatorLayers) * parameters.layerHeight / 1000
     if (sheet % 2 === 0) {

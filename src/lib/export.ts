@@ -6,7 +6,7 @@ import { deriveMounting, MOUNTING } from './mounting'
 import { WOOD_FINISHES } from './wood'
 
 const SCHEMA_VERSION = 1
-const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood'])
+const OPTIONAL_V1_SETTINGS = new Set(['lightSource', 'lightIntensity', 'lightTemperature', 'lightFlicker', 'bulbDiameter', 'bulbHeight', 'secondBulbHeight', 'ceilingLightTemperature', 'ceilingLightIntensity', 'attachment', 'electronicsBox', 'electronicsBoxHeight', 'frameWood', 'boxWood', 'cutoutPattern', 'cutoutCount', 'cutoutDepth', 'cutoutLayers'])
 
 /** Eligibility of the terminal sheets, independent of the preview's current
  * expansion. A collapsed view does not prevent later assembly at a valid height. */
@@ -42,6 +42,16 @@ export function serializeDesign(parameters: LampParameters): string {
       firstLayerHeight: parameters.layerHeight,
       variableLayerHeight: false,
       materials: { 'shade-tpu.stl': 'TPU — permanent diffuser', 'separators-pla.stl': 'PLA — remove every separator' },
+      lightPattern: {
+        shape: parameters.cutoutPattern,
+        repeats: parameters.cutoutCount,
+        depthPercent: parameters.cutoutDepth,
+        remainingTPULayers: parameters.cutoutLayers,
+        remainingThicknessMillimetres: parameters.cutoutLayers * parameters.layerHeight,
+        construction: 'alternating-face-recesses-in-outward-open-PLA-separators',
+        releaseEdge: 'outer',
+        release: 'All recesses widen toward the outside edge. Odd-indexed active membranes are recessed on top, even-indexed active membranes on the bottom, joining the same outward-open PLA separator. Inner folds and both terminal membranes remain full thickness.',
+      },
       mounting: {
         type: 'top-and-bottom-two-piece-perimeter-clamps',
         status: 'concept-needs-physical-load-testing',
@@ -91,7 +101,7 @@ export function parseDesign(text: string): LampParameters {
   if (!source || typeof source !== 'object') throw new Error('The design file is missing its parameter object.')
   const result: Record<string, unknown> = {}
   for (const [key, defaultValue] of Object.entries(DEFAULT_PARAMETERS)) {
-    // Lighting, attachment, base and wood controls were added to version 1. Only absent fields receive
+    // Later controls were added to version 1. Only absent fields receive
     // defaults; explicit nulls, wrong types and unsupported values stay errors.
     const value = Object.hasOwn(source, key) ? (source as Record<string, unknown>)[key]
       : OPTIONAL_V1_SETTINGS.has(key) ? defaultValue : undefined
@@ -99,7 +109,7 @@ export function parseDesign(text: string): LampParameters {
     result[key] = value
   }
   const parameters = result as unknown as LampParameters
-  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height'])
+  const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height', 'cutout-range'])
   const errors = validateLamp(parameters).filter(diagnostic => diagnostic.status === 'error' && scalarErrors.has(diagnostic.id))
   if (parameters.cornerRadius < 0) throw new Error('Corner radius cannot be negative.')
   if (errors.length) throw new Error(errors.map(error => error.title).join(' · '))
@@ -143,6 +153,18 @@ export function createManufacturingArchive(parameters: LampParameters, options: 
   const frameWoodName = WOOD_FINISHES[p.frameWood].name
   const boxWoodName = WOOD_FINISHES[p.boxWood === 'match-frame' ? p.frameWood : p.boxWood].name
   const baseWoodName = p.electronicsBox ? boxWoodName : frameWoodName
+  const patternInstructions = p.cutoutPattern === 'none' ? 'Light patterns: disabled; full-thickness TPU membranes.'
+    : `Light patterns: ${p.cutoutPattern}, ${p.cutoutCount} repeats, ${p.cutoutDepth}% depth.
+Remaining patterned TPU: ${p.cutoutLayers} complete layer(s), ${(p.cutoutLayers * p.layerHeight).toFixed(3)} mm; these are NOT through-holes.
+Recesses open ONLY at the outside edge. Odd-indexed active membranes have top
+recesses, connected to the separator above; even-indexed membranes have bottom
+recesses, connected to the separator below. Each pair joins the same outward-open
+PLA separator. The remaining TPU lies below top recesses and above bottom recesses.
+Pull the patterned PLA outward. Inner folds stay full thickness with no recesses.
+The two terminal clamping membranes remain full thickness. Inspect the pattern
+layers as well as both connector layers. Peel the raised PLA tongues out with
+their separator; check every thin region for tears or retained PLA. Test this
+pattern with the short specimen before making the full shade.`
   const electronicsInstructions = p.electronicsBox
     ? `Enabled: wooden base box with ${p.electronicsBoxHeight} mm usable internal height.
    Wood finish: ${boxWoodName}${p.boxWood === 'match-frame' ? ' (matches the support frame)' : ''}.
@@ -223,6 +245,7 @@ THIS ASSEMBLY
 ${p.pleats} full pleats / ${d.sheets} membrane sheets / ${d.separators} removable PLA separators
 ${p.width} × ${p.shape === 'circle' ? p.width : p.depth} × ${d.compressedHeight.toFixed(3)} mm compressed
 Nominal membranes: ${d.membraneThickness.toFixed(3)} mm; separators: ${d.separatorThickness.toFixed(3)} mm
+${patternInstructions}
 No fittings, peel tabs, raft, prime tower or process margins are modeled.
 Attachment: ${p.attachment === 'springs' ? 'short metal springs, four at the top and four at the bottom' : 'bolted supports, four per end'} (separate hardware).
 Support frame wood: ${frameWoodName}. Base board wood: ${baseWoodName}.

@@ -9,7 +9,7 @@ export interface PrintabilityFix {
 }
 
 const margin = 0.001
-const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height'])
+const scalarErrors = new Set(['finite', 'dimensions', 'dimension-range', 'extrusion-range', 'layers', 'values', 'preview-range', 'lighting-range', 'base-range', 'layer-height', 'cutout-range'])
 const severity = { pass: 0, warning: 1, error: 2 }
 const effectiveDepth = (p: LampParameters) => p.shape === 'circle' ? p.width : p.depth
 const aperture = (p: LampParameters) => Math.min(p.width, effectiveDepth(p)) - 2 * p.bandWidth
@@ -111,13 +111,15 @@ const settingNames: Partial<Record<keyof LampParameters, string>> = {
   shape: 'Shape', width: 'Width', depth: 'Depth', height: 'Target height', pleats: 'Pleats',
   bandWidth: 'Membrane width', cornerRadius: 'Corner radius', twist: 'Twist', modulation: 'Size modulation',
   expansion: 'Expansion', tpuLayers: 'TPU layers', separatorLayers: 'Separator layers',
+  cutoutLayers: 'Remaining TPU layers',
+  cutoutCount: 'Pattern repeats',
   innerConnector: 'Inner join', outerConnector: 'Outer join',
 }
 function formatSetting(key: keyof LampParameters, value: LampParameters[keyof LampParameters]) {
   if (key === 'shape') return value === 'rounded-rectangle' ? 'Soft square' : String(value)
   if (typeof value !== 'number') return String(value)
   const number = Number(value.toFixed(3)).toString()
-  if (key === 'pleats' || key === 'tpuLayers' || key === 'separatorLayers') return number
+  if (key === 'pleats' || key === 'tpuLayers' || key === 'separatorLayers' || key === 'cutoutLayers' || key === 'cutoutCount') return number
   return `${number}${key === 'twist' ? '°' : key === 'modulation' || key === 'expansion' ? '%' : ' mm'}`
 }
 
@@ -153,6 +155,19 @@ export function getPrintabilityFix(parameters: LampParameters, diagnosticId: str
   const p = { ...parameters }
   let label: string
   switch (diagnosticId) {
+    case 'cutout-thickness':
+      label = 'Leave a thinner pattern layer'
+      if (p.tpuLayers < 2) p.tpuLayers = 2
+      p.cutoutLayers = Math.min(p.cutoutLayers, p.tpuLayers - 1)
+      break
+    case 'cutout-sheets':
+      label = 'Add active folding membranes'
+      p.pleats = 2
+      break
+    case 'cutout-web':
+      label = 'Reduce pattern repeats'
+      while (p.cutoutCount > 4 && validateLamp(p).some(item => item.id === 'cutout-web' && item.status === 'error')) p.cutoutCount--
+      break
     case 'contours':
     case 'aperture-access': {
       label = aperture(p) < 20 ? 'Open the aperture' : 'Adjust corner radius'

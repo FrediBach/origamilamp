@@ -10,9 +10,11 @@ import { LAMP_OUTPUT, useLampFlicker } from '@/components/use-lamp-flicker'
 type Lighting = ReturnType<typeof deriveLighting>
 
 /** Thickness-dependent transmitted glow, separate from opaque surface shading. */
-export function useShadeGlow(parameters: LampParameters, lighting: Lighting) {
+export function useShadeGlow(parameters: LampParameters, lighting: Lighting, thin = false) {
+  const layers = thin ? parameters.cutoutLayers : parameters.tpuLayers
+  const key = JSON.stringify([layers, parameters.layerHeight, parameters.width, parameters.depth, parameters.shape, parameters.bandWidth, lighting.shadeBottom, deriveMounting(parameters).displayHeight, lighting.sources])
   const texture = useMemo(() => {
-    const glow = sampleShadeGlow(parameters, lighting)
+    const glow = sampleShadeGlow(parameters, lighting, 128, layers)
     const data = new Uint8Array(glow.length * 4)
     glow.forEach((brightness, row) => {
       const value = Math.round(255 * brightness)
@@ -22,7 +24,7 @@ export function useShadeGlow(parameters: LampParameters, lighting: Lighting) {
     result.magFilter = result.minFilter = THREE.LinearFilter
     result.needsUpdate = true
     return result
-  }, [parameters, lighting])
+  }, [key])
   useEffect(() => () => texture.dispose(), [texture])
   return texture
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { deriveLamp, type LampParameters } from './lamp'
+import { cutoutContourPoint } from './cutout-patterns'
 
 const SEGMENTS = 96
 
@@ -35,11 +36,12 @@ export function buildExpandedGeometry(parameters: LampParameters) {
   const positions: number[] = []
   const indices: number[] = []
   const uv: number[] = []
+  const cutoutCoordinates: number[] = []
 
-  type Row = { contour: THREE.Vector2[]; fraction: number }
-  function addStrip(from: Row, to: Row) {
+  type Row = { contour: THREE.Vector2[]; fraction: number; inset: number }
+  function addStrip(from: Row, to: Row, sheet = -1) {
     const offset = positions.length / 3
-    for (const { contour, fraction } of [from, to]) {
+    for (const { contour, fraction, inset } of [from, to]) {
       const modulation = 1 + (parameters.modulation / 100) * Math.sin(fraction * Math.PI * 2)
       const angle = THREE.MathUtils.degToRad(parameters.twist) * fraction
       const cos = Math.cos(angle)
@@ -50,6 +52,9 @@ export function buildExpandedGeometry(parameters: LampParameters) {
         const z = (point.y / 1000) * modulation
         positions.push(x * cos - z * sin, fraction * height, x * sin + z * cos)
         uv.push(index / SEGMENTS, fraction)
+        // Keep nominal print coordinates through the folded/deformed preview.
+        // Optical masks therefore match the exported recesses, not world Y.
+        cutoutCoordinates.push(index / SEGMENTS, inset / parameters.bandWidth, sheet)
       }
     }
     for (let index = 0; index < SEGMENTS; index += 1) {
@@ -63,29 +68,30 @@ export function buildExpandedGeometry(parameters: LampParameters) {
 
   // Sheet 0 and sheet N−1 are full, flat annular flanges. Their free inner
   // edges fit the clamps; their outer rims remain joined to the active bellows.
-  addStrip({ contour: terminalInner, fraction: 0 }, { contour: outer, fraction: 0 })
+  addStrip({ contour: terminalInner, fraction: 0, inset: parameters.bandWidth }, { contour: outer, fraction: 0, inset: 0 })
   for (let leg = 1; leg < legs - 1; leg += 1) {
     const start = (leg - 1) / derived.activeLegs
     const end = leg / derived.activeLegs
     const rows: Row[] = leg % 2 === 1
-      ? [{ contour: outer, fraction: start }, { contour: outerFreeEdge, fraction: start }, { contour: innerFreeEdge, fraction: end }, { contour: inner, fraction: end }]
-      : [{ contour: inner, fraction: start }, { contour: innerFreeEdge, fraction: start }, { contour: outerFreeEdge, fraction: end }, { contour: outer, fraction: end }]
+      ? [{ contour: outer, fraction: start, inset: 0 }, { contour: outerFreeEdge, fraction: start, inset: parameters.outerConnector }, { contour: innerFreeEdge, fraction: end, inset: parameters.bandWidth - parameters.innerConnector }, { contour: inner, fraction: end, inset: parameters.bandWidth }]
+      : [{ contour: inner, fraction: start, inset: parameters.bandWidth }, { contour: innerFreeEdge, fraction: start, inset: parameters.bandWidth - parameters.innerConnector }, { contour: outerFreeEdge, fraction: end, inset: parameters.outerConnector }, { contour: outer, fraction: end, inset: 0 }]
     // Joining bands remain flat at each crease, so the actual sloping free
     // span follows the right triangle used above rather than stretching it.
     // Draw shared bands once; the terminal flanges already cover the end bands.
-    addStrip(rows[1], rows[2])
-    if (leg < legs - 2) addStrip(rows[2], rows[3])
+    addStrip(rows[1], rows[2], leg)
+    if (leg < legs - 2) addStrip(rows[2], rows[3], leg)
   }
   if (!derived.activeLegs) {
     // A two-sheet specimen has no active span after reserving both flanges.
     // Keep the flat sheets connected at their outer rim in the compressed view.
-    addStrip({ contour: outer, fraction: 0 }, { contour: outer, fraction: 1 })
+    addStrip({ contour: outer, fraction: 0, inset: 0 }, { contour: outer, fraction: 1, inset: 0 })
   }
-  addStrip({ contour: outer, fraction: 1 }, { contour: terminalInner, fraction: 1 })
+  addStrip({ contour: outer, fraction: 1, inset: 0 }, { contour: terminalInner, fraction: 1, inset: parameters.bandWidth })
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+  geometry.setAttribute('cutoutCoord', new THREE.Float32BufferAttribute(cutoutCoordinates, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
@@ -94,6 +100,9 @@ export function buildExpandedGeometry(parameters: LampParameters) {
 
 /** Contour points are millimetres in the viewer's XZ plane. */
 export function previewContour(parameters: LampParameters, inset: number): THREE.Vector2[] {
+  if (parameters.cutoutPattern !== 'none') {
+    return Array.from({ length: SEGMENTS }, (_, i) => new THREE.Vector2(...cutoutContourPoint(parameters, i / SEGMENTS, inset)))
+  }
   const width = Math.max(2, parameters.width - 2 * inset)
   const depth = parameters.shape === 'circle' ? width : Math.max(2, parameters.depth - 2 * inset)
   if (parameters.shape === 'circle') {

@@ -33,9 +33,9 @@ export function deriveShadeTransmission(p: LampParameters) {
 
 /** Sample transmitted glow from bottom to top of the displayed shade.
  * Values remain below one without clipping overlapping sources into plateaus. */
-export function sampleShadeGlow(p: LampParameters, lighting: ReturnType<typeof deriveLighting>, samples = 128): number[] {
+export function sampleShadeGlow(p: LampParameters, lighting: ReturnType<typeof deriveLighting>, samples = 128, membraneLayers = p.tpuLayers): number[] {
   if (!Number.isInteger(samples) || samples < 2) throw new RangeError('Shade glow needs at least two samples.')
-  const { thickness, transmission, spread } = deriveShadeTransmission(p)
+  const { thickness, transmission, spread } = deriveShadeTransmission({ ...p, tpuLayers: membraneLayers })
   const { displayHeight } = deriveMounting(p)
   const pendant = pendantIndex(lighting.sources)
   const falloff = (y: number, center: number) => {

@@ -12,6 +12,7 @@ import { LightControls } from '@/components/light-controls'
 import { MountingControls } from '@/components/mounting-controls'
 import { BaseControls } from '@/components/base-controls'
 import { WoodControls } from '@/components/wood-controls'
+import { PatternControls } from '@/components/pattern-controls'
 import type { RoomStyle } from '@/components/lamp-viewer'
 import { DEFAULT_PARAMETERS, calibrationParameters, deriveLamp, manufacturingErrors, validateLamp, type LampParameters, type Shape } from '@/lib/lamp'
 import { downloadDesign, downloadSTLs, parseDesign, serializeDesign } from '@/lib/export'
@@ -105,6 +106,7 @@ function App() {
               <div className="control-divider" />
               <div className="control-section-title"><span className="field-label">FOLD CHARACTER</span><SlidersHorizontal size={14} /></div>
               {control('bandWidth', 'Membrane width', 8, 40)}
+              <PatternControls parameters={parameters} onUpdate={update} />
               <details className="advanced-controls"><summary>Fine-tune your form <ChevronDown size={15} /></summary><div className="advanced-body">
                 {parameters.shape === 'rounded-rectangle' && control('cornerRadius', 'Corner radius', 10, Math.floor(Math.min(parameters.width, parameters.depth) / 2 - 1))}
                 {control('rotation', 'Object rotation', -180, 180, '°', 5)}

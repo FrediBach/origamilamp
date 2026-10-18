@@ -225,6 +225,11 @@ button svg { pointer-events: none; }
 .attachment-picker { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
 .attachment-picker legend { padding: 0; margin-bottom: 11px; }
 .attachment-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.pattern-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.pattern-controls fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.pattern-controls legend { margin-bottom: 14px; }
+.pattern-controls .panel-description { margin-bottom: 12px; }
+.pattern-description { color: #646856; font-size: 12px; line-height: 1.65; margin: 14px 0 18px; }
 .attachment-option { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 74px; padding: 10px 4px; border: 1px solid #dcddd2; border-radius: 5px; background: transparent; font-size: 11px; }
 .attachment-option.selected { background: #f4ede5; border-color: #bf7460; color: #a54330; }
 .attachment-option:hover { border-color: #b16a55; }
